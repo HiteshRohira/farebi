@@ -8,7 +8,12 @@ import {
 } from 'react'
 import type { ReactNode } from 'react'
 
-import type { ShooClaims, ShooIdentity, ShooTokenResponse } from './shoo-types'
+import type {
+  ShooClaims,
+  ShooClient,
+  ShooIdentity,
+  ShooTokenResponse,
+} from './shoo-types'
 
 type AuthContextValue = {
   identity: ShooIdentity
@@ -25,6 +30,34 @@ type AuthContextValue = {
 
 const emptyIdentity: ShooIdentity = { userId: null }
 const ShooAuthContext = createContext<AuthContextValue | null>(null)
+let shooLoadPromise: Promise<ShooClient> | null = null
+
+function loadShooClient() {
+  if (window.Shoo) return Promise.resolve(window.Shoo)
+  if (shooLoadPromise) return shooLoadPromise
+
+  shooLoadPromise = new Promise<ShooClient>((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = 'https://shoo.dev/shoo.js'
+    script.dataset.shooCallbackPath = '/shoo/callback'
+    script.dataset.shooPii = 'true'
+    script.dataset.shooAutoCallback = 'false'
+    script.async = true
+    script.addEventListener('load', () => {
+      if (window.Shoo) resolve(window.Shoo)
+      else reject(new Error('Shoo loaded without exposing its client API.'))
+    })
+    script.addEventListener('error', () => {
+      reject(new Error('Shoo failed to load. Check your network connection.'))
+    })
+    document.head.append(script)
+  }).catch((error: unknown) => {
+    shooLoadPromise = null
+    throw error
+  })
+
+  return shooLoadPromise
+}
 
 function readIdentity() {
   return window.Shoo?.getIdentity() ?? emptyIdentity
@@ -40,7 +73,9 @@ export function ShooAuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    refreshIdentity()
+    void loadShooClient()
+      .then(refreshIdentity)
+      .catch(() => setIsLoading(false))
 
     const onStorage = (event: StorageEvent) => {
       if (event.key === 'shoo_identity') refreshIdentity()
@@ -56,18 +91,16 @@ export function ShooAuthProvider({ children }: { children: ReactNode }) {
   }, [refreshIdentity])
 
   const signIn = useCallback(async () => {
-    if (!window.Shoo) {
-      throw new Error('Shoo failed to load. Check your network connection.')
-    }
-    await window.Shoo.startSignIn({
+    const shoo = await loadShooClient()
+    await shoo.startSignIn({
       returnTo: window.location.pathname + window.location.search,
       requestPii: true,
     })
   }, [])
 
   const finishSignIn = useCallback(async () => {
-    if (!window.Shoo) throw new Error('Shoo failed to load.')
-    const result = await window.Shoo.handleCallback()
+    const shoo = await loadShooClient()
+    const result = await shoo.handleCallback()
     refreshIdentity()
     return result
   }, [refreshIdentity])

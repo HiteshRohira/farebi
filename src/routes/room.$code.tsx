@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery } from 'convex/react'
+import { useConvexAuth, useMutation, useQuery } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
 import {
   Check,
@@ -43,7 +43,15 @@ function RoomPage() {
   if (!auth.isAuthenticated) {
     return (
       <CenteredCard title="Sign in to join this room">
-        <Button onClick={() => void auth.signIn()}>
+        <Button
+          onClick={() =>
+            void auth.signIn().catch((error: unknown) => {
+              toast.error(
+                error instanceof Error ? error.message : 'Sign-in failed.',
+              )
+            })
+          }
+        >
           <LogIn /> Continue with Shoo
         </Button>
       </CenteredCard>
@@ -56,6 +64,40 @@ function RoomPage() {
         <p className="text-sm text-muted-foreground">
           Configure <code>VITE_CONVEX_URL</code> before opening a room.
         </p>
+      </CenteredCard>
+    )
+  }
+
+  return <ConvexRoomGate code={code} />
+}
+
+function ConvexRoomGate({ code }: { code: string }) {
+  const auth = useShooAuth()
+  const convexAuth = useConvexAuth()
+
+  if (convexAuth.isLoading) {
+    return (
+      <div className="grid min-h-screen place-items-center">
+        <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (!convexAuth.isAuthenticated) {
+    return (
+      <CenteredCard title="Sign-in could not be verified">
+        <p className="text-sm text-muted-foreground">
+          Convex did not accept this Shoo session.
+        </p>
+        {import.meta.env.DEV ? (
+          <p className="font-mono text-xs text-muted-foreground">
+            iss={auth.claims?.iss ?? 'missing'} · aud=
+            {auth.claims?.aud ?? 'missing'}
+          </p>
+        ) : null}
+        <Button variant="outline" onClick={auth.signOut}>
+          Sign out and retry
+        </Button>
       </CenteredCard>
     )
   }

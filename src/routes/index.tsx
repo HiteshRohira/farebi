@@ -1,8 +1,14 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useMutation } from 'convex/react'
-import { ArrowRight, CircleDot, LogOut, Users } from 'lucide-react'
+import { useConvexAuth, useMutation } from 'convex/react'
+import {
+  ArrowRight,
+  CircleDot,
+  LoaderCircle,
+  LogOut,
+  Users,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 import { api } from '../../convex/_generated/api'
@@ -24,6 +30,14 @@ export const Route = createFileRoute('/')({ component: Home })
 function Home() {
   const auth = useShooAuth()
 
+  async function signIn() {
+    try {
+      await auth.signIn()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Sign-in failed.')
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border">
@@ -44,7 +58,7 @@ function Home() {
               </Button>
             </div>
           ) : (
-            <Button size="sm" onClick={() => void auth.signIn()}>
+            <Button size="sm" onClick={() => void signIn()}>
               Sign in with Shoo
             </Button>
           )}
@@ -86,7 +100,7 @@ function Home() {
               <Button
                 size="lg"
                 className="w-full"
-                onClick={() => void auth.signIn()}
+                onClick={() => void signIn()}
               >
                 Continue with Shoo <ArrowRight />
               </Button>
@@ -113,11 +127,43 @@ function Home() {
 }
 
 function GameActions() {
+  const auth = useShooAuth()
+  const convexAuth = useConvexAuth()
   const navigate = useNavigate()
   const createRoom = useMutation(api.rooms.createRoom)
   const joinRoom = useMutation(api.rooms.joinRoom)
   const [code, setCode] = useState('')
   const [pending, setPending] = useState<'create' | 'join' | null>(null)
+
+  if (convexAuth.isLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground">
+        <LoaderCircle className="size-4 animate-spin" /> Securing your session…
+      </div>
+    )
+  }
+
+  if (!convexAuth.isAuthenticated) {
+    return (
+      <div className="grid gap-4 rounded-md border border-border bg-background p-4">
+        <div>
+          <p className="text-sm font-medium">Shoo session was not accepted</p>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            Convex could not validate this sign-in. Sign out, then try again.
+          </p>
+          {import.meta.env.DEV ? (
+            <p className="mt-2 font-mono text-xs text-muted-foreground">
+              iss={auth.claims?.iss ?? 'missing'} · aud=
+              {auth.claims?.aud ?? 'missing'}
+            </p>
+          ) : null}
+        </div>
+        <Button variant="outline" onClick={auth.signOut}>
+          Sign out and retry
+        </Button>
+      </div>
+    )
+  }
 
   async function create() {
     setPending('create')

@@ -16,7 +16,10 @@ if (localMultiuserEnabled) {
 
 export default {
   providers: Array.from(clientIds, (applicationID) => ({
-    domain: shooDomain,
+    type: 'customJwt' as const,
+    issuer: shooDomain,
+    jwks: `${shooDomain}/.well-known/jwks.json`,
+    algorithm: 'ES256' as const,
     applicationID,
   })),
 } satisfies AuthConfig

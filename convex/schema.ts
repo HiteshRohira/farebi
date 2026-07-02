@@ -12,12 +12,16 @@ export const roomStatus = v.union(
 
 export default defineSchema({
   users: defineTable({
-    tokenIdentifier: v.string(),
-    shooUserId: v.string(),
+    betterAuthUserId: v.optional(v.string()),
+    email: v.optional(v.string()),
+    // Kept optional while existing Shoo-era user documents are migrated.
+    tokenIdentifier: v.optional(v.string()),
+    shooUserId: v.optional(v.string()),
     name: v.string(),
     avatar: v.optional(v.string()),
     createdAt: v.number(),
   })
+    .index('by_better_auth_id', ['betterAuthUserId'])
     .index('by_token', ['tokenIdentifier'])
     .index('by_shoo_id', ['shooUserId']),
 
@@ -26,6 +30,9 @@ export default defineSchema({
     hostId: v.id('users'),
     status: roomStatus,
     maxPlayers: v.number(),
+    writingDurationSeconds: v.optional(v.number()),
+    discussionDurationSeconds: v.optional(v.number()),
+    votingDurationSeconds: v.optional(v.number()),
     createdAt: v.number(),
     startedAt: v.optional(v.number()),
     phaseEndsAt: v.optional(v.number()),
@@ -39,6 +46,7 @@ export default defineSchema({
     score: v.number(),
     hasSubmitted: v.boolean(),
     hasVoted: v.boolean(),
+    joinedForNextRound: v.optional(v.boolean()),
     createdAt: v.number(),
   })
     .index('by_room', ['roomId'])

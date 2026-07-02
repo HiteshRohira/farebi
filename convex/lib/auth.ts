@@ -1,20 +1,21 @@
 import type { Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
+import { authComponent } from '../auth'
 
-type AuthCtx = Pick<QueryCtx | MutationCtx, 'auth' | 'db'>
+type AuthCtx = QueryCtx | MutationCtx
 
 export async function requireIdentity(ctx: AuthCtx) {
-  const identity = await ctx.auth.getUserIdentity()
-  if (!identity) throw new Error('You must be signed in.')
-  return identity
+  const authUser = await authComponent.safeGetAuthUser(ctx)
+  if (!authUser) throw new Error('You must be signed in.')
+  return authUser
 }
 
 export async function getCurrentUser(ctx: AuthCtx) {
-  const identity = await requireIdentity(ctx)
+  const authUser = await requireIdentity(ctx)
   return await ctx.db
     .query('users')
-    .withIndex('by_token', (q) =>
-      q.eq('tokenIdentifier', identity.tokenIdentifier),
+    .withIndex('by_better_auth_id', (q) =>
+      q.eq('betterAuthUserId', authUser._id),
     )
     .unique()
 }
@@ -26,26 +27,29 @@ export async function requireCurrentUser(ctx: AuthCtx) {
 }
 
 export async function upsertCurrentUser(ctx: MutationCtx) {
-  const identity = await requireIdentity(ctx)
+  const authUser = await requireIdentity(ctx)
   const existing = await ctx.db
     .query('users')
-    .withIndex('by_token', (q) =>
-      q.eq('tokenIdentifier', identity.tokenIdentifier),
+    .withIndex('by_better_auth_id', (q) =>
+      q.eq('betterAuthUserId', authUser._id),
     )
     .unique()
 
-  const name =
-    identity.name?.trim() || identity.email?.split('@')[0] || 'Player'
-  const avatar = identity.pictureUrl
+  const name = authUser.name.trim() || authUser.email.split('@')[0] || 'Player'
+  const avatar = authUser.image ?? undefined
 
   if (existing) {
-    await ctx.db.patch(existing._id, { name, avatar })
+    await ctx.db.patch(existing._id, {
+      name,
+      email: authUser.email,
+      avatar,
+    })
     return existing._id
   }
 
   return await ctx.db.insert('users', {
-    tokenIdentifier: identity.tokenIdentifier,
-    shooUserId: identity.subject,
+    betterAuthUserId: authUser._id,
+    email: authUser.email,
     name,
     avatar,
     createdAt: Date.now(),

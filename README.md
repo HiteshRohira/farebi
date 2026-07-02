@@ -1,12 +1,12 @@
 # Farebi
 
 A realtime multiplayer truth-or-lie game built with React, TanStack Router,
-Tailwind CSS, shadcn/ui, Convex, and Shoo authentication.
+Tailwind CSS, shadcn/ui, Convex, and Better Auth.
 
 ## Stack boundaries
 
 - Convex is the only backend and database.
-- Shoo is the only authentication provider.
+- Better Auth runs on Convex with Google and named guest sign-in.
 - The UI is permanently dark; there is no theme switcher or light palette.
 - Realtime room state comes from Convex subscriptions (`useQuery`).
 
@@ -24,29 +24,37 @@ Connect a Convex development deployment:
 pnpm dev:backend
 ```
 
-The command creates `.env.local` with `CONVEX_DEPLOYMENT` and
-`VITE_CONVEX_URL`. Configure the Shoo token audience on that deployment:
+The command creates `.env.local` with `CONVEX_DEPLOYMENT`,
+`VITE_CONVEX_URL`, and `VITE_CONVEX_SITE_URL`. Add the frontend origin too:
 
 ```sh
-pnpm exec convex env set SHOO_CLIENT_ID origin:http://localhost:3000
+echo 'VITE_SITE_URL=http://localhost:3000' >> .env.local
 ```
 
-Then run the frontend and Convex watcher together:
+Configure Better Auth on the Convex development deployment:
 
 ```sh
-pnpm dev
+pnpm exec convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
+pnpm exec convex env set SITE_URL http://localhost:3000
+pnpm exec convex env set GOOGLE_CLIENT_ID your-google-client-id
+pnpm exec convex env set GOOGLE_CLIENT_SECRET your-google-client-secret
 ```
 
-Open `http://localhost:3000`. Shoo uses `/shoo/callback` as the local callback
-route and does not require an application registration.
+In Google Cloud, register this exact authorized redirect URI (use the value of
+`VITE_CONVEX_SITE_URL`, not the Vite origin):
+
+```text
+https://your-deployment.convex.site/api/auth/callback/google
+```
+
+Then run `pnpm dev` and open `http://localhost:3000`.
 
 ## Three-player local testing
 
-Enable the extra localhost Shoo audiences on the development deployment only:
+Allow the extra Vite origins on the development deployment only:
 
 ```sh
-pnpm exec convex env set FAREBI_ENV development
-pnpm exec convex env set ALLOW_LOCAL_MULTIUSER_TESTS true
+pnpm exec convex env set TRUSTED_ORIGINS http://localhost:3001,http://localhost:3002
 ```
 
 Start one shared Convex backend and three frontend origins:
@@ -55,16 +63,19 @@ Start one shared Convex backend and three frontend origins:
 pnpm dev:players
 ```
 
-Open ports `3000`, `3001`, and `3002`. Shoo gives the same Google account a
-different pairwise identity for each origin, while all three clients share the
-same Convex room data. Do not set either local-testing variable on a production
-deployment.
+Open ports `3000`, `3001`, and `3002`, then choose **Play locally** and enter a
+different name on each port. Better Auth stores each anonymous session in that
+origin's local storage, so every port becomes a separate player. A Google
+account still represents one player across every origin. Do not set
+development-only trusted origins on a production deployment.
 
-Player names use their Google first name. When two players in a room have the
-same first name, both are shown by their full Google name instead.
+Google player names use their first name, while guest players use the name they
+enter. When two players in a room have the same first name, both are shown by
+their full display name instead.
 
-For production, set `SHOO_CLIENT_ID` on the production Convex deployment to
-the exact public origin, for example `origin:https://farebi.example.com`.
+For production, set `SITE_URL` to the exact public app origin, configure the
+production Google credentials, and register the production Convex `.site`
+callback URL with Google.
 
 ## Checks
 

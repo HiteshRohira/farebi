@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  LIAR_UNCAUGHT_POINTS,
+  TRUTH_CATCH_POINTS,
   assignRoles,
   calculateScoreDeltas,
   resolveDisplayNames,
@@ -33,6 +35,9 @@ describe('assignRoles', () => {
     [3, 1],
     [4, 2],
     [5, 2],
+    [10, 4],
+    [15, 5],
+    [20, 7],
   ])('assigns at least one liar to %i players', (players, expectedLiars) => {
     const roles = assignRoles(players, () => 0.5)
 
@@ -41,8 +46,8 @@ describe('assignRoles', () => {
   })
 
   it('rejects room sizes outside the game rules', () => {
-    expect(() => assignRoles(2)).toThrow('between 3 and 5')
-    expect(() => assignRoles(6)).toThrow('between 3 and 5')
+    expect(() => assignRoles(2)).toThrow('between 3 and 20')
+    expect(() => assignRoles(21)).toThrow('between 3 and 20')
   })
 })
 
@@ -60,8 +65,45 @@ describe('calculateScoreDeltas', () => {
       ],
     )
 
-    expect(scores.get('liar')).toBe(40)
-    expect(scores.get('truth-1')).toBe(10)
+    expect(scores.get('liar')).toBe(LIAR_UNCAUGHT_POINTS)
+    expect(scores.get('truth-1')).toBe(TRUTH_CATCH_POINTS)
+    expect(scores.get('truth-2')).toBe(0)
+  })
+
+  it('gives a liar no points when every truth player catches them', () => {
+    const scores = calculateScoreDeltas(
+      [
+        { id: 'liar', role: 'lie' },
+        { id: 'truth-1', role: 'truth' },
+        { id: 'truth-2', role: 'truth' },
+      ],
+      [
+        { voterId: 'truth-1', targetPlayerId: 'liar' },
+        { voterId: 'truth-2', targetPlayerId: 'liar' },
+      ],
+    )
+
+    expect(scores.get('liar')).toBe(0)
+    expect(scores.get('truth-1')).toBe(TRUTH_CATCH_POINTS)
+    expect(scores.get('truth-2')).toBe(TRUTH_CATCH_POINTS)
+  })
+
+  it('rewards a completely uncaught lie more than catching it', () => {
+    const scores = calculateScoreDeltas(
+      [
+        { id: 'liar', role: 'lie' },
+        { id: 'truth-1', role: 'truth' },
+        { id: 'truth-2', role: 'truth' },
+      ],
+      [
+        { voterId: 'truth-1', targetPlayerId: 'truth-2' },
+        { voterId: 'truth-2', targetPlayerId: 'truth-1' },
+      ],
+    )
+
+    expect(scores.get('liar')).toBe(2 * LIAR_UNCAUGHT_POINTS)
+    expect(scores.get('liar')).toBeGreaterThan(TRUTH_CATCH_POINTS)
+    expect(scores.get('truth-1')).toBe(0)
     expect(scores.get('truth-2')).toBe(0)
   })
 })

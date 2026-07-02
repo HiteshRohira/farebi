@@ -1,32 +1,35 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { ConvexProviderWithAuth, ConvexReactClient } from 'convex/react'
+import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react'
+import type { AuthClient } from '@convex-dev/better-auth/react'
+import { ConvexReactClient } from 'convex/react'
 
-import { ShooAuthProvider, useShooAuthForConvex } from '@/auth/shoo-provider'
+import { authClient } from '@/lib/auth-client'
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL as string | undefined
+const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL as string | undefined
 
 function ConvexBoundary({ children }: { children: ReactNode }) {
   const client = useMemo(
-    () => (convexUrl ? new ConvexReactClient(convexUrl) : null),
+    () =>
+      convexUrl && convexSiteUrl ? new ConvexReactClient(convexUrl) : null,
     [],
   )
 
   if (!client) return children
 
   return (
-    <ConvexProviderWithAuth client={client} useAuth={useShooAuthForConvex}>
+    <ConvexBetterAuthProvider
+      client={client}
+      authClient={authClient as unknown as AuthClient}
+    >
       {children}
-    </ConvexProviderWithAuth>
+    </ConvexBetterAuthProvider>
   )
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  return (
-    <ShooAuthProvider>
-      <ConvexBoundary>{children}</ConvexBoundary>
-    </ShooAuthProvider>
-  )
+  return <ConvexBoundary>{children}</ConvexBoundary>
 }
 
-export const isConvexConfigured = Boolean(convexUrl)
+export const isConvexConfigured = Boolean(convexUrl && convexSiteUrl)

@@ -10,8 +10,9 @@ The core gameplay loop:
 2. Other players join using room code.
 3. When game starts, every player secretly receives:
 
-   * Truth role → must write a real statement about themselves.
-   * Lie role → must write a fake statement about themselves.
+   - Truth role → must write a real statement about themselves.
+   - Lie role → must write a fake statement about themselves.
+
 4. Everyone submits their statement.
 5. All statements are revealed anonymously.
 6. Players discuss and guess who the liars are.
@@ -24,31 +25,33 @@ The core gameplay loop:
 
 ## Frontend
 
-* React
-* TypeScript
-* TanStack Router
-* shadcn/ui
-* Tailwind CSS
-* Default dark mode only
-* Minimal black/white aesthetic
+- React
+- TypeScript
+- TanStack Router
+- shadcn/ui
+- Tailwind CSS
+- Default dark mode only
+- Minimal black/white aesthetic
 
 ## Backend
 
-* Convex
-* Convex realtime subscriptions
-* Convex mutations/actions for game state changes
+- Convex
+- Convex realtime subscriptions
+- Convex mutations/actions for game state changes
 
 ## Authentication
 
 Use:
 
-* shoo.dev authentication
+- Better Auth hosted on Convex
+- Google OAuth as the default sign-in method
+- Anonymous guest sign-in with a player-provided display name
 
 Authentication is required for:
 
-* Creating rooms
-* Joining rooms
-* Tracking player identity
+- Creating rooms
+- Joining rooms
+- Tracking player identity
 
 ---
 
@@ -62,20 +65,20 @@ Colors:
 
 Background:
 
-* near black
+- near black
 
 Cards:
 
-* dark gray
+- dark gray
 
 Text:
 
-* white
-* muted gray secondary text
+- white
+- muted gray secondary text
 
 Accent:
 
-* white
+- white
 
 No gradients.
 No colorful UI.
@@ -83,9 +86,9 @@ No unnecessary animations.
 
 Style inspiration:
 
-* Linear
-* Vercel dashboard
-* shadcn defaults
+- Linear
+- Vercel dashboard
+- shadcn defaults
 
 ---
 
@@ -204,9 +207,9 @@ URL:
 
 Players see:
 
-* Room code
-* Player list
-* Host indicator
+- Room code
+- Player list
+- Host indicator
 
 Host sees:
 
@@ -214,8 +217,8 @@ Host sees:
 
 Requirements:
 
-* Minimum players: 3
-* Maximum players: 5
+- Minimum players: 3
+- Maximum players: 5
 
 ---
 
@@ -239,9 +242,9 @@ Player E → Truth
 
 Rules:
 
-* At least one liar always exists.
-* Role assignment happens server-side.
-* Client never decides roles.
+- At least one liar always exists.
+- Role assignment happens server-side.
+- Client never decides roles.
 
 ---
 
@@ -249,7 +252,7 @@ Rules:
 
 Duration:
 
-60 seconds
+5 minutes by default
 
 UI:
 
@@ -275,9 +278,9 @@ Submit button.
 
 When:
 
-* everyone submits
+- everyone submits
   OR
-* timer reaches 0
+- timer reaches 0
 
 Move to reveal phase.
 
@@ -302,11 +305,11 @@ Player 3
 
 Players know:
 
-* Who wrote each statement
+- Who wrote each statement
 
 Players do NOT know:
 
-* Truth/Lie role
+- Truth/Lie role
 
 ---
 
@@ -320,8 +323,8 @@ Players discuss.
 
 UI:
 
-* Statement cards
-* Chat box
+- Statement cards
+- Chat box
 
 Players can type messages.
 
@@ -349,14 +352,14 @@ Players vote:
 
 Rules:
 
-* Each player gets one vote.
-* Cannot vote themselves.
+- Each player gets one vote.
+- Cannot vote themselves.
 
 Voting ends when:
 
-* Everyone votes
+- Everyone votes
   OR
-* Timer ends
+- Timer ends
 
 ---
 
@@ -364,9 +367,9 @@ Voting ends when:
 
 Reveal:
 
-* Each player's role
-* Correct guesses
-* Score changes
+- Each player's role
+- Correct guesses
+- Score changes
 
 ---
 
@@ -497,12 +500,12 @@ Use Convex subscriptions.
 
 Clients should instantly update:
 
-* player joined
-* game started
-* statements submitted
-* timer changes
-* votes
-* results
+- player joined
+- game started
+- statements submitted
+- timer changes
+- votes
+- results
 
 No manual refresh.
 
@@ -518,8 +521,8 @@ No manual refresh.
 
 Contains:
 
-* Create room button
-* Join room input
+- Create room button
+- Join room input
 
 ---
 
@@ -581,20 +584,20 @@ Convex queries should return:
 
 Lobby:
 
-* players
-* names
+- players
+- names
 
 Writing:
 
-* own role only
+- own role only
 
 Discussion:
 
-* statements only
+- statements only
 
 Results:
 
-* everything
+- everything
 
 ---
 
@@ -602,23 +605,23 @@ Results:
 
 Implement only:
 
-* Authentication
-* Create room
-* Join room
-* 5 player multiplayer
-* Truth/Lie assignment
-* Statement submission
-* Reveal
-* Voting
-* Score calculation
+- Authentication
+- Create room
+- Join room
+- 5 player multiplayer
+- Truth/Lie assignment
+- Statement submission
+- Reveal
+- Voting
+- Score calculation
 
 Do NOT implement:
 
-* matchmaking
-* friends
-* ranking
-* cosmetics
-* voice chat
+- matchmaking
+- friends
+- ranking
+- cosmetics
+- voice chat
 
 ---
 
@@ -626,13 +629,13 @@ Do NOT implement:
 
 Possible additions:
 
-* Multiple rounds
-* Player reputation
-* Custom room rules
-* Voice discussion
-* Anonymous mode
-* AI generated categories (optional)
-* Larger rooms
+- Multiple rounds
+- Player reputation
+- Custom room rules
+- Voice discussion
+- Anonymous mode
+- AI generated categories (optional)
+- Larger rooms
 
 ---
 

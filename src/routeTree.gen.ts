@@ -10,17 +10,11 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ShooCallbackRouteImport } from './routes/shoo.callback'
 import { Route as RoomCodeRouteImport } from './routes/room.$code'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ShooCallbackRoute = ShooCallbackRouteImport.update({
-  id: '/shoo/callback',
-  path: '/shoo/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RoomCodeRoute = RoomCodeRouteImport.update({
@@ -32,31 +26,27 @@ const RoomCodeRoute = RoomCodeRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/room/$code': typeof RoomCodeRoute
-  '/shoo/callback': typeof ShooCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/room/$code': typeof RoomCodeRoute
-  '/shoo/callback': typeof ShooCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/room/$code': typeof RoomCodeRoute
-  '/shoo/callback': typeof ShooCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/room/$code' | '/shoo/callback'
+  fullPaths: '/' | '/room/$code'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/room/$code' | '/shoo/callback'
-  id: '__root__' | '/' | '/room/$code' | '/shoo/callback'
+  to: '/' | '/room/$code'
+  id: '__root__' | '/' | '/room/$code'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   RoomCodeRoute: typeof RoomCodeRoute
-  ShooCallbackRoute: typeof ShooCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -66,13 +56,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/shoo/callback': {
-      id: '/shoo/callback'
-      path: '/shoo/callback'
-      fullPath: '/shoo/callback'
-      preLoaderRoute: typeof ShooCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/room/$code': {
@@ -88,7 +71,6 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   RoomCodeRoute: RoomCodeRoute,
-  ShooCallbackRoute: ShooCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

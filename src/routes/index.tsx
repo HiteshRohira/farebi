@@ -2,18 +2,11 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useConvexAuth, useMutation } from 'convex/react'
-import {
-  ArrowRight,
-  CircleDot,
-  LoaderCircle,
-  LogOut,
-  Users,
-} from 'lucide-react'
+import { ArrowRight, LoaderCircle, LogOut } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { api } from '../../convex/_generated/api'
-import { useShooAuth } from '@/auth/shoo-provider'
-import { Badge } from '@/components/ui/badge'
+import { AuthOptions } from '@/components/auth-options'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -23,18 +16,27 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { useFarebiAuth } from '@/lib/auth-client'
 import { isConvexConfigured } from '@/providers/app-provider'
 
 export const Route = createFileRoute('/')({ component: Home })
 
 function Home() {
-  const auth = useShooAuth()
+  const auth = useFarebiAuth()
 
   async function signIn() {
     try {
       await auth.signIn()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Sign-in failed.')
+    }
+  }
+
+  async function signOut() {
+    try {
+      await auth.signOut()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Sign-out failed.')
     }
   }
 
@@ -48,47 +50,27 @@ function Home() {
             </div>
             <span className="font-semibold tracking-tight">Farebi</span>
           </div>
-          {auth.isAuthenticated ? (
+          {auth.isLoading ? (
+            <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
+          ) : auth.isAuthenticated ? (
             <div className="flex items-center gap-3">
               <span className="hidden text-sm text-muted-foreground sm:inline">
-                {auth.claims?.name ?? 'Player'}
+                {auth.user?.name ?? 'Player'}
               </span>
-              <Button variant="ghost" size="sm" onClick={auth.signOut}>
+              <Button variant="ghost" size="sm" onClick={() => void signOut()}>
                 <LogOut /> Sign out
               </Button>
             </div>
           ) : (
             <Button size="sm" onClick={() => void signIn()}>
-              Sign in with Shoo
+              Continue with Google
             </Button>
           )}
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-6xl gap-16 px-6 py-16 lg:grid-cols-[1fr_420px] lg:items-center lg:py-28">
-        <section>
-          <Badge variant="outline" className="mb-6">
-            <CircleDot className="mr-1.5 size-3" /> 3–5 players
-          </Badge>
-          <h1 className="max-w-2xl text-5xl font-semibold tracking-[-0.045em] sm:text-7xl">
-            Tell the truth.
-            <br />
-            Sell the lie.
-          </h1>
-          <p className="mt-6 max-w-xl text-lg leading-8 text-muted-foreground">
-            A social deduction game about reading your friends. Write a
-            statement, spot the liars, and make your story believable.
-          </p>
-          <div className="mt-10 flex items-center gap-6 text-sm text-muted-foreground">
-            <span className="flex items-center gap-2">
-              <Users className="size-4" /> Private rooms
-            </span>
-            <span>•</span>
-            <span>One device each</span>
-          </div>
-        </section>
-
-        <Card className="border-white/15 bg-card/80">
+      <main className="mx-auto flex min-h-[calc(100svh-4rem)] max-w-xl sm:items-center sm:px-6 sm:py-12">
+        <Card className="min-h-[calc(100svh-4rem)] w-full justify-center rounded-none border-x-0 border-b-0 bg-card/80 px-6 py-10 sm:min-h-0 sm:rounded-xl sm:border sm:p-8">
           <CardHeader>
             <CardTitle className="text-xl">Start a game</CardTitle>
             <CardDescription>
@@ -97,13 +79,7 @@ function Home() {
           </CardHeader>
           <CardContent>
             {!auth.isAuthenticated ? (
-              <Button
-                size="lg"
-                className="w-full"
-                onClick={() => void signIn()}
-              >
-                Continue with Shoo <ArrowRight />
-              </Button>
+              <AuthOptions />
             ) : !isConvexConfigured ? (
               <div className="rounded-md border border-border bg-background p-4 text-sm leading-6 text-muted-foreground">
                 Convex is not connected yet. Run{' '}
@@ -117,17 +93,12 @@ function Home() {
           </CardContent>
         </Card>
       </main>
-
-      <footer className="mx-auto flex max-w-6xl justify-between border-t border-border px-6 py-6 text-xs text-muted-foreground">
-        <span>Realtime rooms powered by Convex</span>
-        <span>Authentication by Shoo</span>
-      </footer>
     </div>
   )
 }
 
 function GameActions() {
-  const auth = useShooAuth()
+  const auth = useFarebiAuth()
   const convexAuth = useConvexAuth()
   const navigate = useNavigate()
   const createRoom = useMutation(api.rooms.createRoom)
@@ -147,18 +118,21 @@ function GameActions() {
     return (
       <div className="grid gap-4 rounded-md border border-border bg-background p-4">
         <div>
-          <p className="text-sm font-medium">Shoo session was not accepted</p>
+          <p className="text-sm font-medium">Google sign-in was not accepted</p>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             Convex could not validate this sign-in. Sign out, then try again.
           </p>
-          {import.meta.env.DEV ? (
-            <p className="mt-2 font-mono text-xs text-muted-foreground">
-              iss={auth.claims?.iss ?? 'missing'} · aud=
-              {auth.claims?.aud ?? 'missing'}
-            </p>
-          ) : null}
         </div>
-        <Button variant="outline" onClick={auth.signOut}>
+        <Button
+          variant="outline"
+          onClick={() =>
+            void auth.signOut().catch((error: unknown) => {
+              toast.error(
+                error instanceof Error ? error.message : 'Sign-out failed.',
+              )
+            })
+          }
+        >
           Sign out and retry
         </Button>
       </div>

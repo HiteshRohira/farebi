@@ -6,7 +6,8 @@ Tailwind CSS, shadcn/ui, Convex, and Better Auth.
 ## Stack boundaries
 
 - Convex is the only backend and database.
-- Better Auth runs on Convex with Google and named guest sign-in.
+- Better Auth runs on Convex with Google sign-in. Named guest sign-in is
+  available only during local development.
 - The UI is permanently dark; there is no theme switcher or light palette.
 - Realtime room state comes from Convex subscriptions (`useQuery`).
 
@@ -75,7 +76,11 @@ their full display name instead.
 
 For production, set `SITE_URL` to the exact public app origin, configure the
 production Google credentials, and register the production Convex `.site`
-callback URL with Google.
+callback URL with Google. Guest sign-in is disabled unless `SITE_URL` uses
+`localhost`, `127.0.0.1`, or `::1`.
+
+Vercel uses the rewrite in `vercel.json` to serve the SPA for direct room URLs
+such as `/room/ABC123`, allowing TanStack Router to handle scanned invites.
 
 ## Checks
 

@@ -289,7 +289,7 @@ function AdminControls({ room }: { room: RoomState }) {
   const [settings, setSettings] = useState(() => ({
     maxPlayers: room.maxPlayers,
     writingDurationMinutes: room.writingDurationSeconds / 60,
-    discussionDurationSeconds: room.discussionDurationSeconds,
+    discussionDurationMinutes: room.discussionDurationSeconds / 60,
     votingDurationMinutes: room.votingDurationSeconds / 60,
   }))
 
@@ -299,7 +299,7 @@ function AdminControls({ room }: { room: RoomState }) {
       setSettings({
         maxPlayers: room.maxPlayers,
         writingDurationMinutes: room.writingDurationSeconds / 60,
-        discussionDurationSeconds: room.discussionDurationSeconds,
+        discussionDurationMinutes: room.discussionDurationSeconds / 60,
         votingDurationMinutes: room.votingDurationSeconds / 60,
       })
     }
@@ -314,7 +314,9 @@ function AdminControls({ room }: { room: RoomState }) {
         writingDurationSeconds: Math.round(
           settings.writingDurationMinutes * 60,
         ),
-        discussionDurationSeconds: settings.discussionDurationSeconds,
+        discussionDurationSeconds: Math.round(
+          settings.discussionDurationMinutes * 60,
+        ),
         votingDurationSeconds: Math.round(settings.votingDurationMinutes * 60),
       })
       toast.success('Room settings saved.')
@@ -391,6 +393,20 @@ function AdminControls({ room }: { room: RoomState }) {
                 setSettings((current) => ({
                   ...current,
                   writingDurationMinutes,
+                }))
+              }
+            />
+            <NumberSetting
+              label="Discussion time"
+              value={settings.discussionDurationMinutes}
+              minimum={0.5}
+              maximum={30}
+              step={0.1}
+              suffix="minutes"
+              onChange={(discussionDurationMinutes) =>
+                setSettings((current) => ({
+                  ...current,
+                  discussionDurationMinutes,
                 }))
               }
             />

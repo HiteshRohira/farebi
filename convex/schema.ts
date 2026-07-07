@@ -31,9 +31,6 @@ export default defineSchema({
     maxPlayers: v.number(),
     writingDurationSeconds: v.optional(v.number()),
     discussionVotingDurationSeconds: v.optional(v.number()),
-    // Legacy duration fields kept optional so existing room documents validate.
-    discussionDurationSeconds: v.optional(v.number()),
-    votingDurationSeconds: v.optional(v.number()),
     createdAt: v.number(),
     startedAt: v.optional(v.number()),
     phaseEndsAt: v.optional(v.number()),

@@ -417,8 +417,8 @@ function AdminControls({ room }: { room: RoomState }) {
           </div>
         ) : phaseAction ? (
           <div className="mt-8 rounded-xl border border-border bg-card p-5">
-            <p className="text-sm font-medium capitalize">
-              {room.status} in progress
+            <p className="text-sm font-medium">
+              {roomStatusLabel(room.status)} in progress
             </p>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               This skips the remaining timer for everyone in the room.

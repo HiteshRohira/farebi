@@ -29,9 +29,7 @@ function durationMs(
   }
 
   return (
-    room.discussionVotingDurationSeconds ??
-    room.votingDurationSeconds ??
-    DEFAULT_DISCUSSION_VOTING_SECONDS
+    room.discussionVotingDurationSeconds ?? DEFAULT_DISCUSSION_VOTING_SECONDS
   ) * 1_000
 }
 
@@ -242,7 +240,6 @@ export const getRoom = query({
         room.writingDurationSeconds ?? DEFAULT_WRITING_SECONDS,
       discussionVotingDurationSeconds:
         room.discussionVotingDurationSeconds ??
-        room.votingDurationSeconds ??
         DEFAULT_DISCUSSION_VOTING_SECONDS,
       phaseEndsAt: room.phaseEndsAt,
       isHost: room.hostId === user._id,

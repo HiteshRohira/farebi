@@ -4,7 +4,6 @@ import { v } from 'convex/values'
 export const roomStatus = v.union(
   v.literal('waiting'),
   v.literal('writing'),
-  v.literal('discussion'),
   v.literal('voting'),
   v.literal('results'),
   v.literal('finished'),
@@ -31,8 +30,7 @@ export default defineSchema({
     status: roomStatus,
     maxPlayers: v.number(),
     writingDurationSeconds: v.optional(v.number()),
-    discussionDurationSeconds: v.optional(v.number()),
-    votingDurationSeconds: v.optional(v.number()),
+    discussionVotingDurationSeconds: v.optional(v.number()),
     createdAt: v.number(),
     startedAt: v.optional(v.number()),
     phaseEndsAt: v.optional(v.number()),

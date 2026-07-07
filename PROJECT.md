@@ -14,8 +14,8 @@ The core gameplay loop:
    - Lie role → must write a fake statement about themselves.
 
 4. Everyone submits their statement.
-5. All statements are revealed anonymously.
-6. Players discuss and guess who the liars are.
+5. All statements are revealed with player names.
+6. Players discuss the revealed statements and lock in votes.
 7. Scores are calculated.
 8. Results are revealed.
 
@@ -121,7 +121,6 @@ hostId
 status:
   waiting
   writing
-  discussion
   voting
   results
   finished
@@ -135,7 +134,7 @@ startedAt
 Default:
 
 ```
-maxPlayers = 5
+maxPlayers = 20
 ```
 
 ---
@@ -218,7 +217,7 @@ Host sees:
 Requirements:
 
 - Minimum players: 3
-- Maximum players: 5
+- Maximum players: 20
 
 ---
 
@@ -282,11 +281,11 @@ When:
   OR
 - timer reaches 0
 
-Move to reveal phase.
+Move to discussion/voting phase.
 
 ---
 
-# Phase 4 — Statement Reveal
+# Phase 4 — Discussion + Voting
 
 All statements appear.
 
@@ -311,51 +310,25 @@ Players do NOT know:
 
 - Truth/Lie role
 
----
-
-# Phase 5 — Discussion
-
 Timer:
 
-3 minutes
+10 minutes by default
 
-Players discuss.
+Players discuss the revealed statements, then vote when ready.
 
 UI:
 
 - Statement cards
-- Chat box
-
-Players can type messages.
-
-Chat messages:
-
-Fields:
-
-```
-roomId
-
-senderId
-
-message
-
-createdAt
-```
-
----
-
-# Phase 6 — Voting
-
-Players vote:
+- Vote controls
 
 "Who is lying?"
 
 Rules:
 
 - Each player gets one vote.
-- Cannot vote themselves.
+- Players may vote for any statement, including their own.
 
-Voting ends when:
+The discussion/voting phase ends when:
 
 - Everyone votes
   OR
@@ -363,7 +336,7 @@ Voting ends when:
 
 ---
 
-# Phase 7 — Results
+# Phase 5 — Results
 
 Reveal:
 
@@ -488,7 +461,6 @@ Handles:
 
 waiting
 → writing
-→ discussion
 → voting
 → results
 
@@ -542,8 +514,6 @@ LobbyComponent
 
 WritingComponent
 
-DiscussionComponent
-
 VotingComponent
 
 ResultsComponent
@@ -591,7 +561,7 @@ Writing:
 
 - own role only
 
-Discussion:
+Voting:
 
 - statements only
 
@@ -608,7 +578,7 @@ Implement only:
 - Authentication
 - Create room
 - Join room
-- 5 player multiplayer
+- 3–20 player multiplayer
 - Truth/Lie assignment
 - Statement submission
 - Reveal

@@ -63,6 +63,10 @@ function getRoomLink(code: string) {
   return `${window.location.origin}/room/${encodeURIComponent(code)}`
 }
 
+function roomStatusLabel(status: RoomState['status']) {
+  return status === 'voting' ? 'Discuss & vote' : status
+}
+
 async function copyRoomLink(code: string) {
   await navigator.clipboard.writeText(getRoomLink(code))
   toast.success('Room link copied.')
@@ -224,9 +228,7 @@ function ConnectedRoom({ code }: { code: string }) {
           <>
             {room.status === 'waiting' ? <Lobby room={room} /> : null}
             {room.status === 'writing' ? <Writing room={room} /> : null}
-            {room.status === 'discussion' || room.status === 'voting' ? (
-              <Voting room={room} />
-            ) : null}
+            {room.status === 'voting' ? <Voting room={room} /> : null}
           </>
         )}
         {room.status === 'results' || room.status === 'finished' ? (
@@ -269,7 +271,7 @@ function RoomHeader({
         )}
         <div className="flex items-center justify-self-end gap-2">
           <Badge variant="outline" className="capitalize">
-            {room.status}
+            {roomStatusLabel(room.status)}
           </Badge>
           {room.phaseEndsAt ? (
             <Timer endsAt={room.phaseEndsAt} onExpire={onExpire} />
@@ -289,8 +291,8 @@ function AdminControls({ room }: { room: RoomState }) {
   const [settings, setSettings] = useState(() => ({
     maxPlayers: room.maxPlayers,
     writingDurationMinutes: room.writingDurationSeconds / 60,
-    discussionDurationMinutes: room.discussionDurationSeconds / 60,
-    votingDurationMinutes: room.votingDurationSeconds / 60,
+    discussionVotingDurationMinutes:
+      room.discussionVotingDurationSeconds / 60,
   }))
 
   function handleOpenChange(nextOpen: boolean) {
@@ -299,8 +301,8 @@ function AdminControls({ room }: { room: RoomState }) {
       setSettings({
         maxPlayers: room.maxPlayers,
         writingDurationMinutes: room.writingDurationSeconds / 60,
-        discussionDurationMinutes: room.discussionDurationSeconds / 60,
-        votingDurationMinutes: room.votingDurationSeconds / 60,
+        discussionVotingDurationMinutes:
+          room.discussionVotingDurationSeconds / 60,
       })
     }
   }
@@ -314,10 +316,9 @@ function AdminControls({ room }: { room: RoomState }) {
         writingDurationSeconds: Math.round(
           settings.writingDurationMinutes * 60,
         ),
-        discussionDurationSeconds: Math.round(
-          settings.discussionDurationMinutes * 60,
+        discussionVotingDurationSeconds: Math.round(
+          settings.discussionVotingDurationMinutes * 60,
         ),
-        votingDurationSeconds: Math.round(settings.votingDurationMinutes * 60),
       })
       toast.success('Room settings saved.')
       setOpen(false)
@@ -346,12 +347,10 @@ function AdminControls({ room }: { room: RoomState }) {
 
   const phaseAction =
     room.status === 'writing'
-      ? 'End writing and start voting'
-      : room.status === 'discussion'
-        ? 'End discussion and start voting'
-        : room.status === 'voting'
-          ? 'End voting and show results'
-          : null
+      ? 'End writing and start discussion/voting'
+      : room.status === 'voting'
+        ? 'End discussion/voting and show results'
+        : null
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -366,7 +365,7 @@ function AdminControls({ room }: { room: RoomState }) {
           <SheetDescription>
             {room.status === 'waiting'
               ? 'Set the room capacity and how long each phase lasts.'
-              : `Manage the current ${room.status} phase.`}
+              : `Manage the current ${roomStatusLabel(room.status)} phase.`}
           </SheetDescription>
         </SheetHeader>
 
@@ -397,30 +396,16 @@ function AdminControls({ room }: { room: RoomState }) {
               }
             />
             <NumberSetting
-              label="Discussion time"
-              value={settings.discussionDurationMinutes}
+              label="Discussion/voting time"
+              value={settings.discussionVotingDurationMinutes}
               minimum={0.5}
               maximum={30}
               step={0.1}
               suffix="minutes"
-              onChange={(discussionDurationMinutes) =>
+              onChange={(discussionVotingDurationMinutes) =>
                 setSettings((current) => ({
                   ...current,
-                  discussionDurationMinutes,
-                }))
-              }
-            />
-            <NumberSetting
-              label="Voting time"
-              value={settings.votingDurationMinutes}
-              minimum={0.5}
-              maximum={30}
-              step={0.1}
-              suffix="minutes"
-              onChange={(votingDurationMinutes) =>
-                setSettings((current) => ({
-                  ...current,
-                  votingDurationMinutes,
+                  discussionVotingDurationMinutes,
                 }))
               }
             />
@@ -741,12 +726,12 @@ function Voting({ room }: { room: RoomState }) {
     <section className="mx-auto max-w-3xl">
       <div className="text-center">
         <Badge variant="outline" className="mb-5">
-          Voting
+          Discuss & vote
         </Badge>
         <h1 className="text-4xl font-semibold tracking-tight">Who is lying?</h1>
         <p className="mt-3 text-muted-foreground">
-          Choose any statement—including your own. You can change your selection
-          until you confirm it.
+          Discuss the statements, then choose any statement—including your own.
+          You can change your selection until you confirm it.
         </p>
       </div>
       {current?.hasVoted ? (

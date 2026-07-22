@@ -197,7 +197,7 @@ export const getRoom = query({
       .collect()
 
     const hideIdentities =
-      room.status === 'discussion' || room.status === 'voting'
+      room.status === 'voting'
     const orderedPlayers = hideIdentities
       ? [...players].sort(
           (a, b) =>

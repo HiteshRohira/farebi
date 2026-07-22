@@ -19,7 +19,31 @@ const DEFAULT_WRITING_SECONDS = 5 * 60
 const DEFAULT_DISCUSSION_VOTING_SECONDS = 10 * 60
 const MIN_PHASE_SECONDS = 0.5 * 60
 const MAX_PHASE_SECONDS = 30 * 60
+const DEFAULT_LIAR_COUNT = 1
+const PHASE_EXTENSION_MS = 30 * 1_000
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+function validateDurations(
+  writingDurationSeconds: number,
+  discussionVotingDurationSeconds: number,
+) {
+  const durations = [
+    ['Writing', writingDurationSeconds],
+    ['Discussion and voting', discussionVotingDurationSeconds],
+  ] as const
+  for (const [label, value] of durations) {
+    if (
+      !Number.isInteger(value) ||
+      value % 6 !== 0 ||
+      value < MIN_PHASE_SECONDS ||
+      value > MAX_PHASE_SECONDS
+    ) {
+      throw new Error(
+        `${label} time must be between 0.5 and 30 minutes, in 0.1-minute increments.`,
+      )
+    }
+  }
+}
 
 function durationMs(
   room: Doc<'rooms'>,
@@ -30,8 +54,9 @@ function durationMs(
   }
 
   return (
-    room.discussionVotingDurationSeconds ?? DEFAULT_DISCUSSION_VOTING_SECONDS
-  ) * 1_000
+    (room.discussionVotingDurationSeconds ??
+      DEFAULT_DISCUSSION_VOTING_SECONDS) * 1_000
+  )
 }
 
 function makeRoomCode() {
@@ -124,6 +149,7 @@ export const createRoom = mutation({
       hostId: userId,
       status: 'waiting',
       maxPlayers,
+      liarCount: DEFAULT_LIAR_COUNT,
       writingDurationSeconds: DEFAULT_WRITING_SECONDS,
       discussionVotingDurationSeconds: DEFAULT_DISCUSSION_VOTING_SECONDS,
       createdAt: Date.now(),
@@ -196,8 +222,7 @@ export const getRoom = query({
       .withIndex('by_room', (q) => q.eq('roomId', room._id))
       .collect()
 
-    const hideIdentities =
-      room.status === 'voting'
+    const hideIdentities = room.status === 'voting'
     const orderedPlayers = hideIdentities
       ? [...players].sort(
           (a, b) =>
@@ -255,6 +280,7 @@ export const getRoom = query({
       code: room.code,
       status: room.status,
       maxPlayers: room.maxPlayers,
+      liarCount: room.liarCount ?? DEFAULT_LIAR_COUNT,
       writingDurationSeconds:
         room.writingDurationSeconds ?? DEFAULT_WRITING_SECONDS,
       discussionVotingDurationSeconds:
@@ -269,7 +295,12 @@ export const getRoom = query({
 })
 
 export const startGame = mutation({
-  args: { roomId: v.id('rooms') },
+  args: {
+    roomId: v.id('rooms'),
+    liarCount: v.number(),
+    writingDurationSeconds: v.number(),
+    discussionVotingDurationSeconds: v.number(),
+  },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx)
     const room = await ctx.db.get(args.roomId)
@@ -284,8 +315,21 @@ export const startGame = mutation({
       .withIndex('by_room', (q) => q.eq('roomId', room._id))
       .collect()
     if (players.length < 3) throw new Error('At least 3 players are required.')
+    if (
+      !Number.isInteger(args.liarCount) ||
+      args.liarCount < 1 ||
+      args.liarCount >= players.length
+    ) {
+      throw new Error(
+        `Choose between 1 and ${players.length - 1} liars for this round.`,
+      )
+    }
+    validateDurations(
+      args.writingDurationSeconds,
+      args.discussionVotingDurationSeconds,
+    )
 
-    const roles = assignRoles(players.length)
+    const roles = assignRoles(players.length, args.liarCount)
     const statementOrders = shuffledIndexes(players.length)
     for (const [index, player] of players.entries()) {
       await ctx.db.patch(player._id, {
@@ -300,8 +344,11 @@ export const startGame = mutation({
     const now = Date.now()
     await ctx.db.patch(room._id, {
       status: 'writing',
+      liarCount: args.liarCount,
+      writingDurationSeconds: args.writingDurationSeconds,
+      discussionVotingDurationSeconds: args.discussionVotingDurationSeconds,
       startedAt: now,
-      phaseEndsAt: now + durationMs(room, 'writingDurationSeconds'),
+      phaseEndsAt: now + args.writingDurationSeconds * 1_000,
     })
   },
 })
@@ -361,7 +408,10 @@ export const restartRound = mutation({
       .collect()
     for (const vote of votes) await ctx.db.delete(vote._id)
 
-    const roles = assignRoles(players.length)
+    const roles = assignRoles(
+      players.length,
+      Math.min(room.liarCount ?? DEFAULT_LIAR_COUNT, players.length - 1),
+    )
     const statementOrders = shuffledIndexes(players.length)
     for (const [index, player] of players.entries()) {
       await ctx.db.patch(player._id, {
@@ -413,22 +463,10 @@ export const updateRoomSettings = mutation({
       )
     }
 
-    const durations = [
-      ['Writing', args.writingDurationSeconds],
-      ['Discussion and voting', args.discussionVotingDurationSeconds],
-    ] as const
-    for (const [label, value] of durations) {
-      if (
-        !Number.isInteger(value) ||
-        value % 6 !== 0 ||
-        value < MIN_PHASE_SECONDS ||
-        value > MAX_PHASE_SECONDS
-      ) {
-        throw new Error(
-          `${label} time must be between 0.5 and 30 minutes, in 0.1-minute increments.`,
-        )
-      }
-    }
+    validateDurations(
+      args.writingDurationSeconds,
+      args.discussionVotingDurationSeconds,
+    )
 
     await ctx.db.patch(room._id, {
       maxPlayers: args.maxPlayers,
@@ -458,6 +496,27 @@ export const endPhaseEarly = mutation({
     } else {
       throw new Error('There is no active phase to end.')
     }
+  },
+})
+
+export const addPhaseTime = mutation({
+  args: { roomId: v.id('rooms') },
+  handler: async (ctx, args) => {
+    const user = await requireCurrentUser(ctx)
+    const room = await ctx.db.get(args.roomId)
+    if (!room) throw new Error('Room not found.')
+    if (room.hostId !== user._id)
+      throw new Error('Only the host can extend a phase.')
+    if (
+      (room.status !== 'writing' && room.status !== 'voting') ||
+      !room.phaseEndsAt
+    ) {
+      throw new Error('There is no active phase to extend.')
+    }
+
+    await ctx.db.patch(room._id, {
+      phaseEndsAt: Math.max(room.phaseEndsAt, Date.now()) + PHASE_EXTENSION_MS,
+    })
   },
 })
 

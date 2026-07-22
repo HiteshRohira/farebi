@@ -29,6 +29,7 @@ export default defineSchema({
     hostId: v.id('users'),
     status: roomStatus,
     maxPlayers: v.number(),
+    liarCount: v.optional(v.number()),
     writingDurationSeconds: v.optional(v.number()),
     discussionVotingDurationSeconds: v.optional(v.number()),
     createdAt: v.number(),

@@ -37,13 +37,20 @@ export function resolveDisplayNames(names: Array<string>) {
 
 export function assignRoles(
   playerCount: number,
+  liarCount = 1,
   random: () => number = Math.random,
 ): Array<Role> {
   if (playerCount < 3 || playerCount > 20) {
     throw new Error('A game requires between 3 and 20 players.')
   }
+  if (
+    !Number.isInteger(liarCount) ||
+    liarCount < 1 ||
+    liarCount >= playerCount
+  ) {
+    throw new Error('A game requires at least one liar and one truth player.')
+  }
 
-  const liarCount = Math.max(1, Math.ceil(playerCount / 3))
   const roles: Array<Role> = Array.from({ length: playerCount }, (_, index) =>
     index < liarCount ? 'lie' : 'truth',
   )

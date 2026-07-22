@@ -9,6 +9,7 @@ import {
   Crown,
   Link2,
   LoaderCircle,
+  Plus,
   QrCode,
   RotateCcw,
   Send,
@@ -42,6 +43,14 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import {
   Sheet,
   SheetContent,
@@ -286,13 +295,13 @@ function RoomHeader({
 function AdminControls({ room }: { room: RoomState }) {
   const updateRoomSettings = useMutation(api.rooms.updateRoomSettings)
   const endPhaseEarly = useMutation(api.rooms.endPhaseEarly)
+  const addPhaseTime = useMutation(api.rooms.addPhaseTime)
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState(false)
   const [settings, setSettings] = useState(() => ({
     maxPlayers: room.maxPlayers,
     writingDurationMinutes: room.writingDurationSeconds / 60,
-    discussionVotingDurationMinutes:
-      room.discussionVotingDurationSeconds / 60,
+    discussionVotingDurationMinutes: room.discussionVotingDurationSeconds / 60,
   }))
 
   function handleOpenChange(nextOpen: boolean) {
@@ -339,6 +348,20 @@ function AdminControls({ room }: { room: RoomState }) {
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : 'Could not end this phase.',
+      )
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function extendPhase() {
+    setPending(true)
+    try {
+      await addPhaseTime({ roomId: room.id })
+      toast.success('Added 30 seconds to this round.')
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not extend this phase.',
       )
     } finally {
       setPending(false)
@@ -421,11 +444,23 @@ function AdminControls({ room }: { room: RoomState }) {
               {roomStatusLabel(room.status)} in progress
             </p>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              This skips the remaining timer for everyone in the room.
+              Add more time for everyone, or move the room forward early.
             </p>
+            <Button
+              variant="outline"
+              className="mt-5 w-full"
+              disabled={pending}
+              onClick={() => void extendPhase()}
+            >
+              <Plus /> +30 sec
+            </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="mt-5 w-full">
+                <Button
+                  variant="destructive"
+                  className="mt-3 w-full"
+                  disabled={pending}
+                >
                   {phaseAction}
                 </Button>
               </AlertDialogTrigger>
@@ -529,12 +564,40 @@ function Timer({ endsAt, onExpire }: { endsAt: number; onExpire: () => void }) {
 
 function Lobby({ room }: { room: RoomState }) {
   const startGame = useMutation(api.rooms.startGame)
+  const [setupOpen, setSetupOpen] = useState(false)
   const [pending, setPending] = useState(false)
+  const [settings, setSettings] = useState(() => ({
+    liarCount: room.liarCount,
+    writingDurationMinutes: room.writingDurationSeconds / 60,
+    discussionVotingDurationMinutes: room.discussionVotingDurationSeconds / 60,
+  }))
+
+  function handleSetupOpen(nextOpen: boolean) {
+    setSetupOpen(nextOpen)
+    if (nextOpen) {
+      setSettings({
+        liarCount: Math.min(room.liarCount, room.players.length - 1),
+        writingDurationMinutes: room.writingDurationSeconds / 60,
+        discussionVotingDurationMinutes:
+          room.discussionVotingDurationSeconds / 60,
+      })
+    }
+  }
 
   async function start() {
     setPending(true)
     try {
-      await startGame({ roomId: room.id })
+      await startGame({
+        roomId: room.id,
+        liarCount: settings.liarCount,
+        writingDurationSeconds: Math.round(
+          settings.writingDurationMinutes * 60,
+        ),
+        discussionVotingDurationSeconds: Math.round(
+          settings.discussionVotingDurationMinutes * 60,
+        ),
+      })
+      setSetupOpen(false)
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : 'Could not start game.',
@@ -611,14 +674,15 @@ function Lobby({ room }: { room: RoomState }) {
               <p className="text-center font-mono text-sm tracking-[0.2em] text-muted-foreground">
                 {room.code}
               </p>
-              <Button
-                className="w-full"
-                size="lg"
-                disabled={pending || room.players.length < 3}
-                onClick={() => void start()}
-              >
-                {pending ? 'Starting…' : 'Start game'}
-              </Button>
+              <StartGameSetup
+                open={setupOpen}
+                pending={pending}
+                playerCount={room.players.length}
+                settings={settings}
+                onOpenChange={handleSetupOpen}
+                onSettingsChange={setSettings}
+                onConfirm={() => void start()}
+              />
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -627,6 +691,167 @@ function Lobby({ room }: { room: RoomState }) {
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+type RoundSetupSettings = {
+  liarCount: number
+  writingDurationMinutes: number
+  discussionVotingDurationMinutes: number
+}
+
+function useDesktopDialog() {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window === 'undefined'
+      ? false
+      : window.matchMedia('(min-width: 640px)').matches,
+  )
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 640px)')
+    const update = () => setIsDesktop(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  return isDesktop
+}
+
+function StartGameSetup({
+  open,
+  pending,
+  playerCount,
+  settings,
+  onOpenChange,
+  onSettingsChange,
+  onConfirm,
+}: {
+  open: boolean
+  pending: boolean
+  playerCount: number
+  settings: RoundSetupSettings
+  onOpenChange: (open: boolean) => void
+  onSettingsChange: (settings: RoundSetupSettings) => void
+  onConfirm: () => void
+}) {
+  const isDesktop = useDesktopDialog()
+  const trigger = (
+    <Button className="w-full" size="lg" disabled={pending || playerCount < 3}>
+      Start game
+    </Button>
+  )
+  const content = (
+    <RoundSetupForm
+      pending={pending}
+      playerCount={playerCount}
+      settings={settings}
+      onSettingsChange={onSettingsChange}
+      onConfirm={onConfirm}
+    />
+  )
+
+  if (isDesktop) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set up this round</DialogTitle>
+            <DialogDescription>
+              Everyone is here. Review the roles and timers before roles are
+              assigned.
+            </DialogDescription>
+          </DialogHeader>
+          {content}
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Set up this round</SheetTitle>
+          <SheetDescription>
+            Everyone is here. Review the roles and timers before roles are
+            assigned.
+          </SheetDescription>
+        </SheetHeader>
+        {content}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function RoundSetupForm({
+  pending,
+  playerCount,
+  settings,
+  onSettingsChange,
+  onConfirm,
+}: {
+  pending: boolean
+  playerCount: number
+  settings: RoundSetupSettings
+  onSettingsChange: (settings: RoundSetupSettings) => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="mt-7 grid gap-5 sm:mt-0">
+      <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-r border-border p-4">
+          <p className="font-mono text-2xl font-semibold">
+            {settings.liarCount}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {settings.liarCount === 1 ? 'Liar' : 'Liars'}
+          </p>
+        </div>
+        <div className="p-4">
+          <p className="font-mono text-2xl font-semibold">
+            {playerCount - settings.liarCount}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">Truth players</p>
+        </div>
+      </div>
+      <NumberSetting
+        label="Number of liars"
+        value={settings.liarCount}
+        minimum={1}
+        maximum={playerCount - 1}
+        suffix={settings.liarCount === 1 ? 'liar' : 'liars'}
+        onChange={(liarCount) => onSettingsChange({ ...settings, liarCount })}
+      />
+      <div className="h-px bg-border" />
+      <NumberSetting
+        label="Writing time"
+        value={settings.writingDurationMinutes}
+        minimum={0.5}
+        maximum={30}
+        step={0.1}
+        suffix="minutes"
+        onChange={(writingDurationMinutes) =>
+          onSettingsChange({ ...settings, writingDurationMinutes })
+        }
+      />
+      <NumberSetting
+        label="Discussion/voting time"
+        value={settings.discussionVotingDurationMinutes}
+        minimum={0.5}
+        maximum={30}
+        step={0.1}
+        suffix="minutes"
+        onChange={(discussionVotingDurationMinutes) =>
+          onSettingsChange({ ...settings, discussionVotingDurationMinutes })
+        }
+      />
+      <Button size="lg" disabled={pending} onClick={onConfirm}>
+        {pending ? 'Starting…' : 'Confirm & Start game'}
+      </Button>
     </div>
   )
 }

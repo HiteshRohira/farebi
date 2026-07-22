@@ -214,6 +214,12 @@ Host sees:
 
 "Start Game"
 
+Before the game starts, the host confirms:
+
+- Number of liars (defaults to 1)
+- Writing time
+- Discussion/voting time
+
 Requirements:
 
 - Minimum players: 3
@@ -235,13 +241,15 @@ Example:
 Player A → Truth
 Player B → Lie
 Player C → Truth
-Player D → Lie
+Player D → Truth
 Player E → Truth
 ```
 
 Rules:
 
-- At least one liar always exists.
+- New rooms default to exactly one liar, regardless of player count.
+- The host can increase the liar count before starting the round.
+- At least one truth player must remain.
 - Role assignment happens server-side.
 - Client never decides roles.
 
@@ -424,7 +432,11 @@ joinRoom(code)
 
 getRoom(code)
 
-startGame(roomId)
+startGame(roomId, liarCount, writingDurationSeconds, discussionVotingDurationSeconds)
+
+addPhaseTime(roomId)
+
+endPhaseEarly(roomId)
 ```
 
 ---

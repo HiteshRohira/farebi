@@ -44,16 +44,27 @@ describe('resolveDisplayNames', () => {
 describe('assignRoles', () => {
   it.each([
     [3, 1],
-    [4, 2],
-    [5, 2],
-    [10, 4],
-    [15, 5],
-    [20, 7],
-  ])('assigns at least one liar to %i players', (players, expectedLiars) => {
-    const roles = assignRoles(players, () => 0.5)
+    [4, 1],
+    [5, 1],
+    [10, 1],
+    [15, 1],
+    [20, 1],
+  ])('defaults to one liar for %i players', (players, expectedLiars) => {
+    const roles = assignRoles(players)
 
     expect(roles).toHaveLength(players)
     expect(roles.filter((role) => role === 'lie')).toHaveLength(expectedLiars)
+  })
+
+  it('uses the host-selected liar count', () => {
+    const roles = assignRoles(8, 3, () => 0.5)
+
+    expect(roles.filter((role) => role === 'lie')).toHaveLength(3)
+    expect(roles.filter((role) => role === 'truth')).toHaveLength(5)
+  })
+
+  it('keeps at least one truth player in the round', () => {
+    expect(() => assignRoles(3, 3)).toThrow('at least one liar and one truth')
   })
 
   it('rejects room sizes outside the game rules', () => {

@@ -23,7 +23,13 @@ export function AuthOptions() {
 
   return (
     <div className="grid gap-5">
+      <NameSignIn />
+      <div className="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="h-px flex-1 bg-border" /> or{' '}
+        <span className="h-px flex-1 bg-border" />
+      </div>
       <Button
+        variant="outline"
         size="lg"
         className="w-full"
         disabled={pending}
@@ -32,12 +38,11 @@ export function AuthOptions() {
         {pending ? 'Opening Google…' : 'Continue with Google'}
         <ArrowRight />
       </Button>
-      {import.meta.env.DEV ? <LocalGuestSignIn /> : null}
     </div>
   )
 }
 
-function LocalGuestSignIn() {
+function NameSignIn() {
   const [name, setName] = useState('')
   const [pending, setPending] = useState(false)
 
@@ -55,15 +60,13 @@ function LocalGuestSignIn() {
   }
 
   return (
-    <>
-      <div className="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-        <span className="h-px flex-1 bg-border" /> or play locally{' '}
-        <span className="h-px flex-1 bg-border" />
-      </div>
-      <form className="flex gap-2" onSubmit={(event) => void submit(event)}>
+    <form className="grid gap-3" onSubmit={(event) => void submit(event)}>
+      <label className="grid gap-2 text-sm font-medium">
+        Your name
         <Input
+          id="player-name"
           aria-label="Your name"
-          placeholder="Your name"
+          placeholder="Enter your name"
           value={name}
           minLength={2}
           maxLength={40}
@@ -71,15 +74,15 @@ function LocalGuestSignIn() {
           disabled={pending}
           onChange={(event) => setName(event.target.value)}
         />
-        <Button
-          type="submit"
-          variant="outline"
-          size="lg"
-          disabled={pending || name.trim().length < 2}
-        >
-          <UserRound /> {pending ? 'Joining…' : 'Play'}
-        </Button>
-      </form>
-    </>
+      </label>
+      <Button
+        type="submit"
+        size="lg"
+        className="w-full"
+        disabled={pending || name.trim().length < 2}
+      >
+        <UserRound /> {pending ? 'Joining…' : 'Continue with name'}
+      </Button>
+    </form>
   )
 }

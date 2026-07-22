@@ -7,18 +7,10 @@ import { createAuthClient } from 'better-auth/react'
 
 export const authClient = createAuthClient({
   baseURL: import.meta.env.VITE_CONVEX_SITE_URL,
-  plugins: [
-    convexClient(),
-    crossDomainClient(),
-    ...(import.meta.env.DEV ? [anonymousClient()] : []),
-  ],
+  plugins: [convexClient(), crossDomainClient(), anonymousClient()],
 })
 
 export async function signInAnonymously(name: string) {
-  if (!import.meta.env.DEV) {
-    throw new Error('Guest sign-in is only available during local development.')
-  }
-
   const displayName = name.trim()
   if (displayName.length < 2 || displayName.length > 40) {
     throw new Error('Your name must be between 2 and 40 characters.')

@@ -46,6 +46,7 @@ export default defineSchema({
     score: v.number(),
     hasSubmitted: v.boolean(),
     hasVoted: v.boolean(),
+    statementOrder: v.optional(v.number()),
     joinedForNextRound: v.optional(v.boolean()),
     createdAt: v.number(),
   })

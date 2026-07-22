@@ -20,20 +20,6 @@ function trustedOrigins() {
   return siteUrl ? [siteUrl, ...additionalOrigins] : additionalOrigins
 }
 
-function isLocalDevelopment() {
-  const siteUrl = process.env.SITE_URL
-  if (!siteUrl) return false
-
-  try {
-    const hostname = new URL(siteUrl).hostname
-    return (
-      hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
-    )
-  } catch {
-    return false
-  }
-}
-
 export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth({
     appName: 'Farebi',
@@ -49,23 +35,17 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
       },
     },
     plugins: [
-      ...(isLocalDevelopment()
-        ? [
-            anonymous({
-              emailDomainName: 'anonymous.farebi.app',
-              generateName: (requestContext) => {
-                const name = new URL(
-                  requestContext.request?.url ?? 'http://localhost',
-                ).searchParams
-                  .get('name')
-                  ?.trim()
-                return name && name.length >= 2 && name.length <= 40
-                  ? name
-                  : 'Guest'
-              },
-            }),
-          ]
-        : []),
+      anonymous({
+        emailDomainName: 'anonymous.farebi.app',
+        generateName: (requestContext) => {
+          const name = new URL(
+            requestContext.request?.url ?? 'http://localhost',
+          ).searchParams
+            .get('name')
+            ?.trim()
+          return name && name.length >= 2 && name.length <= 40 ? name : 'Guest'
+        },
+      }),
       crossDomain({ siteUrl: process.env.SITE_URL! }),
       convex({ authConfig }),
     ],

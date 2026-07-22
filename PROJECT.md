@@ -44,8 +44,8 @@ The core gameplay loop:
 Use:
 
 - Better Auth hosted on Convex
-- Google OAuth as the default sign-in method
-- Anonymous guest sign-in with a player-provided display name
+- Anonymous guest sign-in with a player-provided display name as the default
+- Google OAuth as an optional sign-in method
 
 Authentication is required for:
 

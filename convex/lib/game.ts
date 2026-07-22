@@ -3,6 +3,20 @@ export type Role = 'truth' | 'lie'
 export const LIAR_UNCAUGHT_POINTS = 20
 export const TRUTH_CATCH_POINTS = 10
 
+export function shuffledIndexes(
+  count: number,
+  random: () => number = Math.random,
+) {
+  const indexes = Array.from({ length: count }, (_, index) => index)
+  for (let index = indexes.length - 1; index > 0; index -= 1) {
+    const swapWith = Math.floor(random() * (index + 1))
+    const value = indexes[index]
+    indexes[index] = indexes[swapWith]!
+    indexes[swapWith] = value!
+  }
+  return indexes
+}
+
 export function resolveDisplayNames(names: Array<string>) {
   const normalizedNames = names.map((name) => name.trim() || 'Player')
   const firstNames = normalizedNames.map((name) => name.split(/\s+/)[0])

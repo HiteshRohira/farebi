@@ -119,7 +119,7 @@ function ConvexRoomGate({ code }: { code: string }) {
     return (
       <CenteredCard title="Sign-in could not be verified">
         <p className="text-sm text-muted-foreground">
-          The server did not accept this Google session.
+          The server did not accept this session.
         </p>
         <Button
           variant="outline"
@@ -744,7 +744,7 @@ function Voting({ room }: { room: RoomState }) {
           <div className="mt-10 grid gap-3 sm:grid-cols-2">
             {room.players
               .filter((player) => player.isPlaying)
-              .map((player) => (
+              .map((player, index) => (
                 <button
                   key={player.id}
                   type="button"
@@ -759,7 +759,9 @@ function Voting({ room }: { room: RoomState }) {
                   onClick={() => setSelected(player.id)}
                 >
                   <span className="flex items-center justify-between gap-3 font-medium">
-                    {player.name}
+                    <span className="font-mono text-xs uppercase tracking-[0.16em]">
+                      Statement {String(index + 1).padStart(2, '0')}
+                    </span>
                     {player.isCurrent ? (
                       <Badge
                         variant="outline"
@@ -819,7 +821,7 @@ function WaitingForNextRound() {
 function Results({ room }: { room: RoomState }) {
   const restartRound = useMutation(api.rooms.restartRound)
   const [pending, setPending] = useState(false)
-  const ranked = room.players
+  const ranked = [...room.players]
     .filter((player) => player.isPlaying)
     .sort((a, b) => b.score - a.score)
 
@@ -859,7 +861,7 @@ function Results({ room }: { room: RoomState }) {
               {index + 1}
             </span>
             <div>
-              <p className="font-medium">{player.name}</p>
+              <p className="font-medium">{player.name ?? 'Player'}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 “{player.statement}”
               </p>
@@ -915,12 +917,14 @@ function Results({ room }: { room: RoomState }) {
 }
 
 function PlayerRow({ player }: { player: Player }) {
+  const name = player.name ?? 'Player'
+
   return (
     <div className="flex h-16 items-center gap-3 rounded-lg border border-border bg-card px-4">
       <div className="grid size-8 place-items-center rounded-full bg-secondary text-xs font-semibold">
-        {player.name.slice(0, 1).toUpperCase()}
+        {name.slice(0, 1).toUpperCase()}
       </div>
-      <span className="text-sm font-medium">{player.name}</span>
+      <span className="text-sm font-medium">{name}</span>
       {player.isHost ? (
         <Crown className="ml-auto size-3.5 text-muted-foreground" />
       ) : null}

@@ -6,7 +6,18 @@ import {
   assignRoles,
   calculateScoreDeltas,
   resolveDisplayNames,
+  shuffledIndexes,
 } from '../convex/lib/game'
+
+describe('shuffledIndexes', () => {
+  it('creates a complete randomized statement order', () => {
+    const values = [0.8, 0.1, 0.6]
+    const indexes = shuffledIndexes(4, () => values.shift() ?? 0)
+
+    expect(indexes).toEqual([2, 1, 0, 3])
+    expect([...indexes].sort((a, b) => a - b)).toEqual([0, 1, 2, 3])
+  })
+})
 
 describe('resolveDisplayNames', () => {
   it('uses first names when they are unique in the room', () => {

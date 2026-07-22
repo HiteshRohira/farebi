@@ -12,6 +12,7 @@ import {
   assignRoles,
   calculateScoreDeltas,
   resolveDisplayNames,
+  shuffledIndexes,
 } from './lib/game'
 
 const DEFAULT_WRITING_SECONDS = 5 * 60
@@ -206,22 +207,40 @@ export const getRoom = query({
       .withIndex('by_room', (q) => q.eq('roomId', room._id))
       .collect()
 
+    const hideIdentities =
+      room.status === 'discussion' || room.status === 'voting'
+    const orderedPlayers = hideIdentities
+      ? [...players].sort(
+          (a, b) =>
+            (a.statementOrder ?? Number.MAX_SAFE_INTEGER) -
+              (b.statementOrder ?? Number.MAX_SAFE_INTEGER) ||
+            a._id.localeCompare(b._id),
+        )
+      : players
+    const revealNames =
+      room.status === 'waiting' ||
+      room.status === 'results' ||
+      room.status === 'finished'
+
     const profiles = []
-    for (const player of players) {
+    for (const player of orderedPlayers) {
       const profile = await ctx.db.get(player.userId)
       profiles.push(profile)
     }
-    const displayNames = resolveDisplayNames(
-      profiles.map((profile) => profile?.name ?? 'Player'),
-    )
+    const displayNames = revealNames
+      ? resolveDisplayNames(
+          profiles.map((profile) => profile?.name ?? 'Player'),
+        )
+      : []
 
     const visiblePlayers = []
-    for (const [index, player] of players.entries()) {
+    for (const [index, player] of orderedPlayers.entries()) {
       const profile = profiles[index]
       visiblePlayers.push({
         id: player._id,
-        name: displayNames[index],
-        avatar: profile?.avatar,
+        ...(revealNames
+          ? { name: displayNames[index], avatar: profile?.avatar }
+          : {}),
         isHost: player.userId === room.hostId,
         isCurrent: player._id === currentPlayer._id,
         hasSubmitted: player.hasSubmitted,
@@ -279,9 +298,11 @@ export const startGame = mutation({
     if (players.length < 3) throw new Error('At least 3 players are required.')
 
     const roles = assignRoles(players.length)
+    const statementOrders = shuffledIndexes(players.length)
     for (const [index, player] of players.entries()) {
       await ctx.db.patch(player._id, {
         role: roles[index],
+        statementOrder: statementOrders[index],
         statement: undefined,
         hasSubmitted: false,
         hasVoted: false,
@@ -371,9 +392,11 @@ export const restartRound = mutation({
     for (const vote of votes) await ctx.db.delete(vote._id)
 
     const roles = assignRoles(players.length)
+    const statementOrders = shuffledIndexes(players.length)
     for (const [index, player] of players.entries()) {
       await ctx.db.patch(player._id, {
         role: roles[index],
+        statementOrder: statementOrders[index],
         statement: undefined,
         hasSubmitted: false,
         hasVoted: false,

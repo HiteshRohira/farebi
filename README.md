@@ -6,8 +6,8 @@ Tailwind CSS, shadcn/ui, Convex, and Better Auth.
 ## Stack boundaries
 
 - Convex is the only backend and database.
-- Better Auth runs on Convex with Google sign-in. Named guest sign-in is
-  available only during local development.
+- Better Auth runs on Convex with name-only guest sign-in and optional Google
+  sign-in.
 - The UI is permanently dark; there is no theme switcher or light palette.
 - Realtime room state comes from Convex subscriptions (`useQuery`).
 
@@ -64,7 +64,7 @@ Start one shared Convex backend and three frontend origins:
 pnpm dev:players
 ```
 
-Open ports `3000`, `3001`, and `3002`, then choose **Play locally** and enter a
+Open ports `3000`, `3001`, and `3002`, then enter a
 different name on each port. Better Auth stores each anonymous session in that
 origin's local storage, so every port becomes a separate player. A Google
 account still represents one player across every origin. Do not set
@@ -74,10 +74,10 @@ Google player names use their first name, while guest players use the name they
 enter. When two players in a room have the same first name, both are shown by
 their full display name instead.
 
-For production, set `SITE_URL` to the exact public app origin, configure the
-production Google credentials, and register the production Convex `.site`
-callback URL with Google. Guest sign-in is disabled unless `SITE_URL` uses
-`localhost`, `127.0.0.1`, or `::1`.
+For production, set `SITE_URL` to the exact public app origin. Name-only guest
+sign-in works in every environment. If Google sign-in is offered, also configure
+the production Google credentials and register the production Convex `.site`
+callback URL with Google.
 
 Vercel uses the rewrite in `vercel.json` to serve the SPA for direct room URLs
 such as `/room/ABC123`, allowing TanStack Router to handle scanned invites.

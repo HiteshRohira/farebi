@@ -24,14 +24,6 @@ export const Route = createFileRoute('/')({ component: Home })
 function Home() {
   const auth = useFarebiAuth()
 
-  async function signIn() {
-    try {
-      await auth.signIn()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Sign-in failed.')
-    }
-  }
-
   async function signOut() {
     try {
       await auth.signOut()
@@ -62,8 +54,8 @@ function Home() {
               </Button>
             </div>
           ) : (
-            <Button size="sm" onClick={() => void signIn()}>
-              Continue with Google
+            <Button size="sm" asChild>
+              <a href="#player-name">Play now</a>
             </Button>
           )}
         </div>
@@ -118,7 +110,7 @@ function GameActions() {
     return (
       <div className="grid gap-4 rounded-md border border-border bg-background p-4">
         <div>
-          <p className="text-sm font-medium">Google sign-in was not accepted</p>
+          <p className="text-sm font-medium">Sign-in was not accepted</p>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             Convex could not validate this sign-in. Sign out, then try again.
           </p>

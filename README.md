@@ -1,7 +1,12 @@
 # Farebi
 
-A realtime multiplayer truth-or-lie game built with React, TanStack Router,
-Tailwind CSS, shadcn/ui, Convex, and Better Auth.
+A realtime multiplayer party-game platform built with React, TanStack Router,
+Tailwind CSS, shadcn/ui, Convex, and Better Auth. The same room can currently
+play Truth or Lie and Who’s That?, with the host choosing the game each round.
+
+Who’s That? ships with a deliberately mainstream, India-relevant starter
+catalogue. Built-in photos are resolved through Wikipedia's PageImages API;
+custom picks can be a name only or include a photo uploaded to Convex storage.
 
 ## Stack boundaries
 
@@ -50,25 +55,29 @@ https://your-deployment.convex.site/api/auth/callback/google
 
 Then run `pnpm dev` and open `http://localhost:3000`.
 
-## Three-player local testing
+## Multi-player local testing
 
 Allow the extra Vite origins on the development deployment only:
 
 ```sh
-pnpm exec convex env set TRUSTED_ORIGINS http://localhost:3001,http://localhost:3002
+pnpm exec convex env set TRUSTED_ORIGINS http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004
 ```
 
-Start one shared Convex backend and three frontend origins:
+Start one shared Convex backend and any number of isolated player origins:
 
 ```sh
-pnpm dev:players
+pnpm dev:players --users=5
 ```
 
-Open ports `3000`, `3001`, and `3002`, then enter a
+Add `--open` to open every origin automatically. Otherwise, open ports `3000`
+through `3004`, then enter a
 different name on each port. Better Auth stores each anonymous session in that
 origin's local storage, so every port becomes a separate player. A Google
 account still represents one player across every origin. Do not set
 development-only trusted origins on a production deployment.
+
+`--users` accepts 1–20 and defaults to 3. Add every port after 3000 that you
+plan to use to `TRUSTED_ORIGINS` before starting the test.
 
 Google player names use their first name, while guest players use the name they
 enter. When two players in a room have the same first name, both are shown by

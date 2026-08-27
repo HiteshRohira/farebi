@@ -64,9 +64,15 @@ function Home() {
       <main className="mx-auto flex min-h-[calc(100svh-4rem)] max-w-xl sm:items-center sm:px-6 sm:py-12">
         <Card className="min-h-[calc(100svh-4rem)] w-full justify-center rounded-none border-x-0 border-b-0 bg-card/80 px-6 py-10 sm:min-h-0 sm:rounded-xl sm:border sm:p-8">
           <CardHeader>
-            <CardTitle className="text-xl">Start a game</CardTitle>
+            <p className="mb-2 font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              2 games · one room
+            </p>
+            <CardTitle className="text-3xl tracking-tight">
+              One room. More games.
+            </CardTitle>
             <CardDescription>
-              Create a room or enter a six-character invite code.
+              Bring everyone together, then let the host pick what the room
+              plays. Start with Truth or Lie or Who’s That?
             </CardDescription>
           </CardHeader>
           <CardContent>

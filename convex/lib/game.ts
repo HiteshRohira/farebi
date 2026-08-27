@@ -17,6 +17,21 @@ export function shuffledIndexes(
   return indexes
 }
 
+export function createCelebrityTurns<TPlayerId extends string>(
+  players: Array<{ id: TPlayerId; name: string }>,
+) {
+  const ordered = [...players].sort(
+    (a, b) =>
+      a.name.localeCompare(b.name, 'en-IN', { sensitivity: 'base' }) ||
+      a.id.localeCompare(b.id),
+  )
+  return ordered.map((player, turnOrder) => ({
+    guesserId: player.id,
+    targetPlayerId: ordered[(turnOrder + 1) % ordered.length].id,
+    turnOrder,
+  }))
+}
+
 export function resolveDisplayNames(names: Array<string>) {
   const normalizedNames = names.map((name) => name.trim() || 'Player')
   const firstNames = normalizedNames.map((name) => name.split(/\s+/)[0])

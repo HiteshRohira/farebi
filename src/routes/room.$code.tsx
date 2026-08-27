@@ -4,16 +4,22 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { useConvexAuth, useMutation, useQuery } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
 import {
+  ArrowLeft,
+  Camera,
   Check,
   Clock3,
   Crown,
+  ImagePlus,
   Link2,
   LoaderCircle,
   Plus,
   QrCode,
   RotateCcw,
+  Search,
   Send,
   SlidersHorizontal,
+  Sparkles,
+  UserRoundCheck,
   Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -62,6 +68,7 @@ import {
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { useFarebiAuth } from '@/lib/auth-client'
+import { CELEBRITIES, resolveCelebrityPhoto } from '@/lib/celebrities'
 import { cn } from '@/lib/utils'
 import { isConvexConfigured } from '@/providers/app-provider'
 
@@ -73,7 +80,10 @@ function getRoomLink(code: string) {
 }
 
 function roomStatusLabel(status: RoomState['status']) {
-  return status === 'voting' ? 'Discuss & vote' : status
+  if (status === 'voting') return 'Discuss & vote'
+  if (status === 'celebrity_submitting') return 'Pick a celebrity'
+  if (status === 'celebrity_guessing') return 'Guessing'
+  return status
 }
 
 async function copyRoomLink(code: string) {
@@ -238,6 +248,12 @@ function ConnectedRoom({ code }: { code: string }) {
             {room.status === 'waiting' ? <Lobby room={room} /> : null}
             {room.status === 'writing' ? <Writing room={room} /> : null}
             {room.status === 'voting' ? <Voting room={room} /> : null}
+            {room.status === 'celebrity_submitting' ? (
+              <CelebritySubmission room={room} />
+            ) : null}
+            {room.status === 'celebrity_guessing' ? (
+              <CelebrityGuessing room={room} />
+            ) : null}
           </>
         )}
         {room.status === 'results' || room.status === 'finished' ? (
@@ -566,6 +582,9 @@ function Lobby({ room }: { room: RoomState }) {
   const startGame = useMutation(api.rooms.startGame)
   const [setupOpen, setSetupOpen] = useState(false)
   const [pending, setPending] = useState(false)
+  const [gameType, setGameType] = useState<'truth_or_lie' | 'celebrity' | null>(
+    null,
+  )
   const [settings, setSettings] = useState(() => ({
     liarCount: room.liarCount,
     writingDurationMinutes: room.writingDurationSeconds / 60,
@@ -589,13 +608,18 @@ function Lobby({ room }: { room: RoomState }) {
     try {
       await startGame({
         roomId: room.id,
-        liarCount: settings.liarCount,
-        writingDurationSeconds: Math.round(
-          settings.writingDurationMinutes * 60,
-        ),
-        discussionVotingDurationSeconds: Math.round(
-          settings.discussionVotingDurationMinutes * 60,
-        ),
+        gameType: gameType ?? 'truth_or_lie',
+        ...(gameType !== 'celebrity'
+          ? {
+              liarCount: settings.liarCount,
+              writingDurationSeconds: Math.round(
+                settings.writingDurationMinutes * 60,
+              ),
+              discussionVotingDurationSeconds: Math.round(
+                settings.discussionVotingDurationMinutes * 60,
+              ),
+            }
+          : {}),
       })
       setSetupOpen(false)
     } catch (error) {
@@ -678,8 +702,10 @@ function Lobby({ room }: { room: RoomState }) {
                 open={setupOpen}
                 pending={pending}
                 playerCount={room.players.length}
+                gameType={gameType}
                 settings={settings}
                 onOpenChange={handleSetupOpen}
+                onGameTypeChange={setGameType}
                 onSettingsChange={setSettings}
                 onConfirm={() => void start()}
               />
@@ -723,30 +749,36 @@ function StartGameSetup({
   open,
   pending,
   playerCount,
+  gameType,
   settings,
   onOpenChange,
+  onGameTypeChange,
   onSettingsChange,
   onConfirm,
 }: {
   open: boolean
   pending: boolean
   playerCount: number
+  gameType: 'truth_or_lie' | 'celebrity' | null
   settings: RoundSetupSettings
   onOpenChange: (open: boolean) => void
+  onGameTypeChange: (gameType: 'truth_or_lie' | 'celebrity') => void
   onSettingsChange: (settings: RoundSetupSettings) => void
   onConfirm: () => void
 }) {
   const isDesktop = useDesktopDialog()
   const trigger = (
     <Button className="w-full" size="lg" disabled={pending || playerCount < 3}>
-      Start game
+      <Sparkles /> Choose a game
     </Button>
   )
   const content = (
     <RoundSetupForm
       pending={pending}
       playerCount={playerCount}
+      gameType={gameType}
       settings={settings}
+      onGameTypeChange={onGameTypeChange}
       onSettingsChange={onSettingsChange}
       onConfirm={onConfirm}
     />
@@ -758,10 +790,9 @@ function StartGameSetup({
         <DialogTrigger asChild>{trigger}</DialogTrigger>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Set up this round</DialogTitle>
+            <DialogTitle>Pick tonight’s game</DialogTitle>
             <DialogDescription>
-              Everyone is here. Review the roles and timers before roles are
-              assigned.
+              The room stays together when you switch games.
             </DialogDescription>
           </DialogHeader>
           {content}
@@ -775,10 +806,9 @@ function StartGameSetup({
       <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Set up this round</SheetTitle>
+          <SheetTitle>Pick tonight’s game</SheetTitle>
           <SheetDescription>
-            Everyone is here. Review the roles and timers before roles are
-            assigned.
+            The room stays together when you switch games.
           </SheetDescription>
         </SheetHeader>
         {content}
@@ -790,69 +820,147 @@ function StartGameSetup({
 function RoundSetupForm({
   pending,
   playerCount,
+  gameType,
   settings,
+  onGameTypeChange,
   onSettingsChange,
   onConfirm,
 }: {
   pending: boolean
   playerCount: number
+  gameType: 'truth_or_lie' | 'celebrity' | null
   settings: RoundSetupSettings
+  onGameTypeChange: (gameType: 'truth_or_lie' | 'celebrity') => void
   onSettingsChange: (settings: RoundSetupSettings) => void
   onConfirm: () => void
 }) {
   return (
     <div className="mt-7 grid gap-5 sm:mt-0">
-      <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card">
-        <div className="border-r border-border p-4">
-          <p className="font-mono text-2xl font-semibold">
-            {settings.liarCount}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {settings.liarCount === 1 ? 'Liar' : 'Liars'}
-          </p>
-        </div>
-        <div className="p-4">
-          <p className="font-mono text-2xl font-semibold">
-            {playerCount - settings.liarCount}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">Truth players</p>
-        </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <GameChoice
+          selected={gameType === 'truth_or_lie'}
+          icon={<UserRoundCheck className="size-5" />}
+          title="Truth or Lie"
+          description="Write a story, spot the liars, score the room."
+          onClick={() => onGameTypeChange('truth_or_lie')}
+        />
+        <GameChoice
+          selected={gameType === 'celebrity'}
+          icon={<Camera className="size-5" />}
+          title="Who’s That?"
+          description="Pick famous faces and take turns guessing aloud."
+          onClick={() => onGameTypeChange('celebrity')}
+        />
       </div>
-      <NumberSetting
-        label="Number of liars"
-        value={settings.liarCount}
-        minimum={1}
-        maximum={playerCount - 1}
-        suffix={settings.liarCount === 1 ? 'liar' : 'liars'}
-        onChange={(liarCount) => onSettingsChange({ ...settings, liarCount })}
-      />
-      <div className="h-px bg-border" />
-      <NumberSetting
-        label="Writing time"
-        value={settings.writingDurationMinutes}
-        minimum={0.5}
-        maximum={30}
-        step={0.1}
-        suffix="minutes"
-        onChange={(writingDurationMinutes) =>
-          onSettingsChange({ ...settings, writingDurationMinutes })
-        }
-      />
-      <NumberSetting
-        label="Discussion/voting time"
-        value={settings.discussionVotingDurationMinutes}
-        minimum={0.5}
-        maximum={30}
-        step={0.1}
-        suffix="minutes"
-        onChange={(discussionVotingDurationMinutes) =>
-          onSettingsChange({ ...settings, discussionVotingDurationMinutes })
-        }
-      />
-      <Button size="lg" disabled={pending} onClick={onConfirm}>
-        {pending ? 'Starting…' : 'Confirm & Start game'}
+      {gameType === 'truth_or_lie' ? (
+        <>
+          <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card">
+            <div className="border-r border-border p-4">
+              <p className="font-mono text-2xl font-semibold">
+                {settings.liarCount}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {settings.liarCount === 1 ? 'Liar' : 'Liars'}
+              </p>
+            </div>
+            <div className="p-4">
+              <p className="font-mono text-2xl font-semibold">
+                {playerCount - settings.liarCount}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Truth players
+              </p>
+            </div>
+          </div>
+          <NumberSetting
+            label="Number of liars"
+            value={settings.liarCount}
+            minimum={1}
+            maximum={playerCount - 1}
+            suffix={settings.liarCount === 1 ? 'liar' : 'liars'}
+            onChange={(liarCount) =>
+              onSettingsChange({ ...settings, liarCount })
+            }
+          />
+          <div className="h-px bg-border" />
+          <NumberSetting
+            label="Writing time"
+            value={settings.writingDurationMinutes}
+            minimum={0.5}
+            maximum={30}
+            step={0.1}
+            suffix="minutes"
+            onChange={(writingDurationMinutes) =>
+              onSettingsChange({ ...settings, writingDurationMinutes })
+            }
+          />
+          <NumberSetting
+            label="Discussion/voting time"
+            value={settings.discussionVotingDurationMinutes}
+            minimum={0.5}
+            maximum={30}
+            step={0.1}
+            suffix="minutes"
+            onChange={(discussionVotingDurationMinutes) =>
+              onSettingsChange({ ...settings, discussionVotingDurationMinutes })
+            }
+          />
+        </>
+      ) : gameType === 'celebrity' ? (
+        <div className="rounded-lg border border-border bg-card p-4 text-sm leading-6 text-muted-foreground">
+          Everyone privately picks one well-known person. Turns run
+          alphabetically; the guesser looks away while the rest of the room sees
+          the name and photo.
+        </div>
+      ) : (
+        <p className="text-center text-sm text-muted-foreground">
+          Choose a game to continue.
+        </p>
+      )}
+      <Button size="lg" disabled={pending || !gameType} onClick={onConfirm}>
+        {pending ? 'Starting…' : 'Start game'}
       </Button>
     </div>
+  )
+}
+
+function GameChoice({
+  selected,
+  icon,
+  title,
+  description,
+  onClick,
+}: {
+  selected: boolean
+  icon: React.ReactNode
+  title: string
+  description: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      className={cn(
+        'rounded-xl border p-4 text-left transition-colors',
+        selected
+          ? 'border-foreground bg-foreground text-background'
+          : 'border-border bg-card hover:border-white/30',
+      )}
+      onClick={onClick}
+    >
+      <span className="flex items-center gap-2 font-medium">
+        {icon} {title}
+      </span>
+      <span
+        className={cn(
+          'mt-2 block text-xs leading-5',
+          selected ? 'text-background/65' : 'text-muted-foreground',
+        )}
+      >
+        {description}
+      </span>
+    </button>
   )
 }
 
@@ -926,6 +1034,324 @@ function Writing({ room }: { room: RoomState }) {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function CelebritySubmission({ room }: { room: RoomState }) {
+  const generateUploadUrl = useMutation(api.rooms.generateCelebrityUploadUrl)
+  const submitCelebrity = useMutation(api.rooms.submitCelebrity)
+  const current = room.players.find((player) => player.isCurrent)
+  const [search, setSearch] = useState('')
+  const [name, setName] = useState('')
+  const [photoUrl, setPhotoUrl] = useState<string | undefined>()
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | undefined>()
+  const [resolvingPhoto, setResolvingPhoto] = useState(false)
+  const [pending, setPending] = useState(false)
+
+  useEffect(() => {
+    if (!photoFile) {
+      setPreviewUrl(undefined)
+      return
+    }
+    const next = URL.createObjectURL(photoFile)
+    setPreviewUrl(next)
+    return () => URL.revokeObjectURL(next)
+  }, [photoFile])
+
+  const normalizedSearch = search.trim().toLocaleLowerCase()
+  const matches = CELEBRITIES.filter((celebrity) =>
+    `${celebrity.name} ${celebrity.category}`
+      .toLocaleLowerCase()
+      .includes(normalizedSearch),
+  ).slice(0, 8)
+
+  async function chooseCelebrity(celebrity: (typeof CELEBRITIES)[number]) {
+    setName(celebrity.name)
+    setPhotoFile(null)
+    setPhotoUrl(undefined)
+    setResolvingPhoto(true)
+    try {
+      setPhotoUrl(await resolveCelebrityPhoto(celebrity.wikipediaTitle))
+    } catch {
+      // A name-only card is intentional when Wikimedia has no usable image.
+    } finally {
+      setResolvingPhoto(false)
+    }
+  }
+
+  function chooseFile(file: File | undefined) {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Choose an image file.')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Keep the image under 5 MB.')
+      return
+    }
+    setPhotoFile(file)
+    setPhotoUrl(undefined)
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setPending(true)
+    try {
+      let imageStorageId: Id<'_storage'> | undefined
+      if (photoFile) {
+        const uploadUrl = await generateUploadUrl({ roomId: room.id })
+        const response = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': photoFile.type },
+          body: photoFile,
+        })
+        if (!response.ok) throw new Error('Photo upload failed.')
+        const upload = (await response.json()) as { storageId: Id<'_storage'> }
+        imageStorageId = upload.storageId
+      }
+      await submitCelebrity({
+        roomId: room.id,
+        name,
+        imageUrl: imageStorageId ? undefined : photoUrl,
+        imageStorageId,
+      })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not submit.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  if (current?.hasSubmitted) {
+    return (
+      <section className="mx-auto max-w-xl text-center">
+        <Badge variant="outline" className="mb-5">
+          Locked in
+        </Badge>
+        {current.celebrityImageUrl ? (
+          <img
+            src={current.celebrityImageUrl}
+            alt=""
+            className="mx-auto mb-6 aspect-[4/5] w-48 rounded-2xl border border-border object-cover grayscale"
+          />
+        ) : null}
+        <h1 className="text-4xl font-semibold tracking-tight">
+          {current.celebrityName}
+        </h1>
+        <p className="mt-3 text-muted-foreground">
+          Keep it secret. Waiting for everyone else to pick.
+        </p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="mx-auto max-w-3xl">
+      <div className="text-center">
+        <Badge variant="outline" className="mb-5">
+          Your secret pick
+        </Badge>
+        <h1 className="text-4xl font-semibold tracking-tight">
+          Pick someone everyone knows
+        </h1>
+        <p className="mt-3 text-muted-foreground">
+          Search the starter shelf or type any name. A photo is helpful, never
+          required.
+        </p>
+      </div>
+
+      <div className="mt-10 grid gap-6 md:grid-cols-[1fr_280px]">
+        <Card>
+          <CardContent className="grid gap-4 pt-1">
+            <label className="relative block">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                placeholder="Search actors, sport, music…"
+                className="pl-9"
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </label>
+            <div className="grid max-h-72 gap-2 overflow-y-auto pr-1">
+              {matches.map((celebrity) => (
+                <button
+                  key={celebrity.name}
+                  type="button"
+                  className={cn(
+                    'flex items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors',
+                    name === celebrity.name
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-border bg-background hover:border-white/30',
+                  )}
+                  onClick={() => void chooseCelebrity(celebrity)}
+                >
+                  <span className="text-sm font-medium">{celebrity.name}</span>
+                  <span
+                    className={cn(
+                      'text-xs',
+                      name === celebrity.name
+                        ? 'text-background/60'
+                        : 'text-muted-foreground',
+                    )}
+                  >
+                    {celebrity.category}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <form
+          className="grid content-start gap-4"
+          onSubmit={(event) => void submit(event)}
+        >
+          <label className="grid gap-2 text-sm font-medium">
+            Name
+            <Input
+              value={name}
+              maxLength={80}
+              placeholder="Or type a custom name"
+              onChange={(event) => {
+                setName(event.target.value)
+                setPhotoUrl(undefined)
+                setPhotoFile(null)
+              }}
+            />
+          </label>
+          {previewUrl || photoUrl ? (
+            <div className="relative overflow-hidden rounded-xl border border-border bg-card">
+              <img
+                src={previewUrl ?? photoUrl}
+                alt="Selected celebrity"
+                className="aspect-[4/3] w-full object-cover grayscale"
+              />
+            </div>
+          ) : resolvingPhoto ? (
+            <div className="grid aspect-[4/3] place-items-center rounded-xl border border-border bg-card">
+              <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : null}
+          <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent">
+            <ImagePlus className="size-4" />
+            {photoFile ? 'Change photo' : 'Upload a photo'}
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(event) => chooseFile(event.target.files?.[0])}
+            />
+          </label>
+          <Button
+            size="lg"
+            disabled={pending || resolvingPhoto || name.trim().length < 2}
+          >
+            <Send /> {pending ? 'Submitting…' : 'Lock in pick'}
+          </Button>
+        </form>
+      </div>
+    </section>
+  )
+}
+
+function CelebrityGuessing({ room }: { room: RoomState }) {
+  const advanceCelebrityTurn = useMutation(api.rooms.advanceCelebrityTurn)
+  const [pending, setPending] = useState(false)
+  const active = room.players.find(
+    (player) => player.id === room.activeCelebrityPlayerId,
+  )
+  const isGuesser = active?.isCurrent ?? false
+  const canAdvance = room.isHost || isGuesser
+  const turn = room.celebrityTurnIndex + 1
+  const playerCount = room.players.filter((player) => player.isPlaying).length
+
+  async function finishTurn(guessed: boolean) {
+    setPending(true)
+    try {
+      await advanceCelebrityTurn({ roomId: room.id, guessed })
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not finish the turn.',
+      )
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <section className="mx-auto max-w-2xl text-center">
+      <div className="flex items-center justify-center gap-3">
+        <Badge variant="outline">
+          Turn {turn}/{playerCount}
+        </Badge>
+        <Badge variant="outline">Alphabetical order</Badge>
+      </div>
+      <p className="mt-7 text-sm uppercase tracking-[0.2em] text-muted-foreground">
+        Up now
+      </p>
+      <h1 className="mt-2 text-5xl font-semibold tracking-tight">
+        {active?.name ?? 'Player'}
+      </h1>
+
+      {isGuesser ? (
+        <div className="mt-10 rounded-2xl border border-border bg-card px-6 py-14">
+          <Camera className="mx-auto size-7 text-muted-foreground" />
+          <h2 className="mt-5 text-2xl font-semibold">
+            Look away from your phone
+          </h2>
+          <p className="mx-auto mt-3 max-w-sm leading-7 text-muted-foreground">
+            Everyone else can see the answer. Ask yes-or-no questions and say
+            your final guess aloud.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-10 overflow-hidden rounded-2xl border border-border bg-card">
+          {active?.celebrityTarget?.imageUrl ? (
+            <img
+              src={active.celebrityTarget.imageUrl}
+              alt=""
+              className="aspect-[16/10] w-full object-cover object-top grayscale"
+            />
+          ) : null}
+          <div className="px-6 py-8">
+            <p className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+              The answer
+            </p>
+            <h2 className="mt-3 text-4xl font-semibold tracking-tight">
+              {active?.celebrityTarget?.name}
+            </h2>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Don’t say the name. Give only yes-or-no answers.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {canAdvance ? (
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <Button
+            variant="outline"
+            size="lg"
+            disabled={pending}
+            onClick={() => void finishTurn(false)}
+          >
+            Skip & next
+          </Button>
+          <Button
+            size="lg"
+            disabled={pending}
+            onClick={() => void finishTurn(true)}
+          >
+            <Check /> Guessed it · +10
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-6 text-sm text-muted-foreground">
+          The guesser or host will move to the next turn.
+        </p>
+      )}
+    </section>
   )
 }
 
@@ -1046,13 +1472,14 @@ function WaitingForNextRound() {
 
 function Results({ room }: { room: RoomState }) {
   const restartRound = useMutation(api.rooms.restartRound)
-  const [pending, setPending] = useState(false)
+  const returnToLobby = useMutation(api.rooms.returnToLobby)
+  const [pending, setPending] = useState<'restart' | 'lobby' | null>(null)
   const ranked = [...room.players]
     .filter((player) => player.isPlaying)
     .sort((a, b) => b.score - a.score)
 
   async function restart() {
-    setPending(true)
+    setPending('restart')
     try {
       await restartRound({ roomId: room.id })
     } catch (error) {
@@ -1060,9 +1487,24 @@ function Results({ room }: { room: RoomState }) {
         error instanceof Error ? error.message : 'Could not start a new round.',
       )
     } finally {
-      setPending(false)
+      setPending(null)
     }
   }
+
+  async function chooseAnotherGame() {
+    setPending('lobby')
+    try {
+      await returnToLobby({ roomId: room.id })
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not return to lobby.',
+      )
+    } finally {
+      setPending(null)
+    }
+  }
+
+  const isCelebrity = room.gameType === 'celebrity'
 
   return (
     <section className="mx-auto max-w-3xl">
@@ -1071,10 +1513,12 @@ function Results({ room }: { room: RoomState }) {
           Results
         </Badge>
         <h1 className="text-4xl font-semibold tracking-tight">
-          Truth revealed
+          {isCelebrity ? 'That’s everyone' : 'Truth revealed'}
         </h1>
         <p className="mt-3 text-muted-foreground">
-          The stories are over. Here is the score.
+          {isCelebrity
+            ? 'The faces are revealed. Here is the room score.'
+            : 'The stories are over. Here is the score.'}
         </p>
       </div>
       <div className="mt-10 grid gap-3">
@@ -1089,15 +1533,27 @@ function Results({ room }: { room: RoomState }) {
             <div>
               <p className="font-medium">{player.name ?? 'Player'}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                “{player.statement}”
+                {isCelebrity
+                  ? `Guessed ${player.celebrityTarget?.name ?? 'a celebrity'}`
+                  : `“${player.statement}”`}
               </p>
             </div>
-            <Badge
-              className="capitalize"
-              variant={player.role === 'lie' ? 'default' : 'outline'}
-            >
-              {player.role}
-            </Badge>
+            {isCelebrity ? (
+              <Badge
+                variant={
+                  player.celebrityTarget?.wasGuessed ? 'default' : 'outline'
+                }
+              >
+                {player.celebrityTarget?.wasGuessed ? 'Guessed' : 'Skipped'}
+              </Badge>
+            ) : (
+              <Badge
+                className="capitalize"
+                variant={player.role === 'lie' ? 'default' : 'outline'}
+              >
+                {player.role}
+              </Badge>
+            )}
             <span className="w-12 text-right font-mono text-sm">
               {player.score}
             </span>
@@ -1105,34 +1561,44 @@ function Results({ room }: { room: RoomState }) {
         ))}
       </div>
       {room.isHost ? (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button size="lg" className="mt-6 w-full">
-              <RotateCcw /> Play another round
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Start another round?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Everyone stays in this room and keeps their total score. New
-                roles will be assigned immediately.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Not yet</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={pending}
-                onClick={() => void restart()}
-              >
-                {pending ? 'Starting…' : 'Start next round'}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <Button
+            variant="outline"
+            size="lg"
+            disabled={pending !== null}
+            onClick={() => void chooseAnotherGame()}
+          >
+            <ArrowLeft /> {pending === 'lobby' ? 'Returning…' : 'Game shelf'}
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="lg" disabled={pending !== null}>
+                <RotateCcw /> Play same game
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Start another round?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Everyone stays in this room and keeps their total score. New
+                  {isCelebrity ? ' celebrities' : ' roles'} will be picked.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Not yet</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={pending !== null}
+                  onClick={() => void restart()}
+                >
+                  {pending === 'restart' ? 'Starting…' : 'Start next round'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       ) : (
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          The host can start another round with everyone in this room.
+          The host can replay this game or take the room back to the game shelf.
         </p>
       )}
       <Button asChild variant="ghost" className="mt-3 w-full">

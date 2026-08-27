@@ -5,6 +5,7 @@ import {
   TRUTH_CATCH_POINTS,
   assignRoles,
   calculateScoreDeltas,
+  createCelebrityTurns,
   resolveDisplayNames,
   shuffledIndexes,
 } from '../convex/lib/game'
@@ -38,6 +39,34 @@ describe('resolveDisplayNames', () => {
       'Hitesh Rohira',
       'Hitesh Rohira',
     ])
+  })
+})
+
+describe('createCelebrityTurns', () => {
+  it('uses alphabetical turns and rotates picks away from their submitter', () => {
+    expect(
+      createCelebrityTurns([
+        { id: 'z-player', name: 'Zoya' },
+        { id: 'a-player', name: 'Aarav' },
+        { id: 'm-player', name: 'Meera' },
+      ]),
+    ).toEqual([
+      { guesserId: 'a-player', targetPlayerId: 'm-player', turnOrder: 0 },
+      { guesserId: 'm-player', targetPlayerId: 'z-player', turnOrder: 1 },
+      { guesserId: 'z-player', targetPlayerId: 'a-player', turnOrder: 2 },
+    ])
+  })
+
+  it('never gives a player their own submitted celebrity', () => {
+    const turns = createCelebrityTurns([
+      { id: 'one', name: 'One' },
+      { id: 'two', name: 'Two' },
+      { id: 'three', name: 'Three' },
+    ])
+
+    expect(turns.every((turn) => turn.guesserId !== turn.targetPlayerId)).toBe(
+      true,
+    )
   })
 })
 

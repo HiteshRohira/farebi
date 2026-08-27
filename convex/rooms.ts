@@ -11,9 +11,12 @@ import {
 import {
   assignRoles,
   calculateScoreDeltas,
+  createCelebrityTurns,
   resolveDisplayNames,
   shuffledIndexes,
 } from './lib/game'
+
+type GameType = 'truth_or_lie' | 'celebrity'
 
 const DEFAULT_WRITING_SECONDS = 5 * 60
 const DEFAULT_DISCUSSION_VOTING_SECONDS = 10 * 60
@@ -222,6 +225,7 @@ export const getRoom = query({
       .withIndex('by_room', (q) => q.eq('roomId', room._id))
       .collect()
 
+    const gameType: GameType = room.gameType ?? 'truth_or_lie'
     const hideIdentities = room.status === 'voting'
     const orderedPlayers = hideIdentities
       ? [...players].sort(
@@ -232,6 +236,7 @@ export const getRoom = query({
         )
       : players
     const revealNames =
+      gameType === 'celebrity' ||
       room.status === 'waiting' ||
       room.status === 'results' ||
       room.status === 'finished'
@@ -247,9 +252,31 @@ export const getRoom = query({
         )
       : []
 
+    const celebrityPlayersById = new Map(
+      players.map((player) => [player._id, player]),
+    )
+    const activeCelebrityPlayer =
+      room.status === 'celebrity_guessing'
+        ? players.find(
+            (player) =>
+              player.celebrityTurnOrder === (room.celebrityTurnIndex ?? 0),
+          )
+        : undefined
     const visiblePlayers = []
     for (const [index, player] of orderedPlayers.entries()) {
       const profile = profiles[index]
+      const celebrityTarget = player.celebrityTargetPlayerId
+        ? celebrityPlayersById.get(player.celebrityTargetPlayerId)
+        : undefined
+      const canSeeCelebrityTarget =
+        room.status === 'results' ||
+        room.status === 'finished' ||
+        (room.status === 'celebrity_guessing' &&
+          activeCelebrityPlayer?._id === player._id &&
+          currentPlayer._id !== player._id)
+      const targetImageUrl = celebrityTarget?.celebrityImageStorageId
+        ? await ctx.storage.getUrl(celebrityTarget.celebrityImageStorageId)
+        : celebrityTarget?.celebrityImageUrl
       visiblePlayers.push({
         id: player._id,
         ...(revealNames
@@ -259,7 +286,10 @@ export const getRoom = query({
         isCurrent: player._id === currentPlayer._id,
         hasSubmitted: player.hasSubmitted,
         hasVoted: player.hasVoted,
-        isPlaying: player.role !== undefined,
+        isPlaying:
+          gameType === 'celebrity'
+            ? !(player.joinedForNextRound ?? false)
+            : player.role !== undefined,
         joinedForNextRound: player.joinedForNextRound ?? false,
         statement:
           room.status === 'waiting' || room.status === 'writing'
@@ -272,6 +302,25 @@ export const getRoom = query({
               ? player.role
               : undefined,
         score: player.score,
+        celebrityName:
+          player._id === currentPlayer._id || room.status === 'results'
+            ? player.celebrityName
+            : undefined,
+        celebrityImageUrl:
+          player._id === currentPlayer._id || room.status === 'results'
+            ? player.celebrityImageStorageId
+              ? await ctx.storage.getUrl(player.celebrityImageStorageId)
+              : player.celebrityImageUrl
+            : undefined,
+        celebrityTurnOrder: player.celebrityTurnOrder,
+        celebrityWasGuessed: player.celebrityWasGuessed,
+        celebrityTarget: canSeeCelebrityTarget
+          ? {
+              name: celebrityTarget?.celebrityName,
+              imageUrl: targetImageUrl ?? undefined,
+              wasGuessed: celebrityTarget?.celebrityWasGuessed,
+            }
+          : undefined,
       })
     }
 
@@ -279,6 +328,7 @@ export const getRoom = query({
       id: room._id,
       code: room.code,
       status: room.status,
+      gameType,
       maxPlayers: room.maxPlayers,
       liarCount: room.liarCount ?? DEFAULT_LIAR_COUNT,
       writingDurationSeconds:
@@ -289,6 +339,8 @@ export const getRoom = query({
       phaseEndsAt: room.phaseEndsAt,
       isHost: room.hostId === user._id,
       currentPlayerId: currentPlayer._id,
+      celebrityTurnIndex: room.celebrityTurnIndex ?? 0,
+      activeCelebrityPlayerId: activeCelebrityPlayer?._id,
       players: visiblePlayers,
     }
   },
@@ -297,9 +349,10 @@ export const getRoom = query({
 export const startGame = mutation({
   args: {
     roomId: v.id('rooms'),
-    liarCount: v.number(),
-    writingDurationSeconds: v.number(),
-    discussionVotingDurationSeconds: v.number(),
+    gameType: v.union(v.literal('truth_or_lie'), v.literal('celebrity')),
+    liarCount: v.optional(v.number()),
+    writingDurationSeconds: v.optional(v.number()),
+    discussionVotingDurationSeconds: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx)
@@ -315,21 +368,49 @@ export const startGame = mutation({
       .withIndex('by_room', (q) => q.eq('roomId', room._id))
       .collect()
     if (players.length < 3) throw new Error('At least 3 players are required.')
+    if (args.gameType === 'celebrity') {
+      for (const player of players) {
+        await ctx.db.patch(player._id, {
+          role: undefined,
+          statement: undefined,
+          hasSubmitted: false,
+          hasVoted: false,
+          joinedForNextRound: false,
+          celebrityName: undefined,
+          celebrityImageUrl: undefined,
+          celebrityImageStorageId: undefined,
+          celebrityTargetPlayerId: undefined,
+          celebrityTurnOrder: undefined,
+          celebrityWasGuessed: undefined,
+        })
+      }
+      await ctx.db.patch(room._id, {
+        gameType: 'celebrity',
+        status: 'celebrity_submitting',
+        startedAt: Date.now(),
+        phaseEndsAt: undefined,
+        celebrityTurnIndex: 0,
+      })
+      return
+    }
+
+    const liarCount = args.liarCount ?? DEFAULT_LIAR_COUNT
+    const writingDurationSeconds =
+      args.writingDurationSeconds ?? DEFAULT_WRITING_SECONDS
+    const discussionVotingDurationSeconds =
+      args.discussionVotingDurationSeconds ?? DEFAULT_DISCUSSION_VOTING_SECONDS
     if (
-      !Number.isInteger(args.liarCount) ||
-      args.liarCount < 1 ||
-      args.liarCount >= players.length
+      !Number.isInteger(liarCount) ||
+      liarCount < 1 ||
+      liarCount >= players.length
     ) {
       throw new Error(
         `Choose between 1 and ${players.length - 1} liars for this round.`,
       )
     }
-    validateDurations(
-      args.writingDurationSeconds,
-      args.discussionVotingDurationSeconds,
-    )
+    validateDurations(writingDurationSeconds, discussionVotingDurationSeconds)
 
-    const roles = assignRoles(players.length, args.liarCount)
+    const roles = assignRoles(players.length, liarCount)
     const statementOrders = shuffledIndexes(players.length)
     for (const [index, player] of players.entries()) {
       await ctx.db.patch(player._id, {
@@ -339,16 +420,24 @@ export const startGame = mutation({
         hasSubmitted: false,
         hasVoted: false,
         joinedForNextRound: false,
+        celebrityName: undefined,
+        celebrityImageUrl: undefined,
+        celebrityImageStorageId: undefined,
+        celebrityTargetPlayerId: undefined,
+        celebrityTurnOrder: undefined,
+        celebrityWasGuessed: undefined,
       })
     }
     const now = Date.now()
     await ctx.db.patch(room._id, {
       status: 'writing',
-      liarCount: args.liarCount,
-      writingDurationSeconds: args.writingDurationSeconds,
-      discussionVotingDurationSeconds: args.discussionVotingDurationSeconds,
+      gameType: 'truth_or_lie',
+      liarCount,
+      writingDurationSeconds,
+      discussionVotingDurationSeconds,
       startedAt: now,
-      phaseEndsAt: now + args.writingDurationSeconds * 1_000,
+      phaseEndsAt: now + writingDurationSeconds * 1_000,
+      celebrityTurnIndex: undefined,
     })
   },
 })
@@ -384,6 +473,131 @@ export const submitStatement = mutation({
   },
 })
 
+export const generateCelebrityUploadUrl = mutation({
+  args: { roomId: v.id('rooms') },
+  handler: async (ctx, args) => {
+    const room = await ctx.db.get(args.roomId)
+    if (!room || room.status !== 'celebrity_submitting') {
+      throw new Error('Celebrity selection has ended.')
+    }
+    const { player } = await requirePlayer(ctx, args.roomId)
+    if (player.joinedForNextRound)
+      throw new Error('You will join the next round.')
+    return await ctx.storage.generateUploadUrl()
+  },
+})
+
+export const submitCelebrity = mutation({
+  args: {
+    roomId: v.id('rooms'),
+    name: v.string(),
+    imageUrl: v.optional(v.string()),
+    imageStorageId: v.optional(v.id('_storage')),
+  },
+  handler: async (ctx, args) => {
+    const room = await ctx.db.get(args.roomId)
+    if (!room || room.status !== 'celebrity_submitting') {
+      throw new Error('Celebrity selection has ended.')
+    }
+    const { player } = await requirePlayer(ctx, args.roomId)
+    if (player.joinedForNextRound)
+      throw new Error('You will join the next round.')
+
+    const name = args.name.trim()
+    if (name.length < 2 || name.length > 80) {
+      throw new Error('Celebrity name must be between 2 and 80 characters.')
+    }
+    if (args.imageUrl && !/^https:\/\//i.test(args.imageUrl)) {
+      throw new Error('Celebrity image must use a secure URL.')
+    }
+
+    await ctx.db.patch(player._id, {
+      celebrityName: name,
+      celebrityImageUrl: args.imageStorageId ? undefined : args.imageUrl,
+      celebrityImageStorageId: args.imageStorageId,
+      hasSubmitted: true,
+    })
+
+    const players = await ctx.db
+      .query('players')
+      .withIndex('by_room', (q) => q.eq('roomId', room._id))
+      .collect()
+    const activePlayers = players.filter((item) => !item.joinedForNextRound)
+    if (
+      !activePlayers.every(
+        (item) => item._id === player._id || item.hasSubmitted,
+      )
+    ) {
+      return
+    }
+
+    const namedPlayers = []
+    for (const item of activePlayers) {
+      const profile = await ctx.db.get(item.userId)
+      namedPlayers.push({ player: item, name: profile?.name ?? 'Player' })
+    }
+    const turns = createCelebrityTurns(
+      namedPlayers.map((item) => ({ id: item.player._id, name: item.name })),
+    )
+    for (const turn of turns) {
+      await ctx.db.patch(turn.guesserId, {
+        celebrityTurnOrder: turn.turnOrder,
+        celebrityTargetPlayerId: turn.targetPlayerId,
+      })
+    }
+    await ctx.db.patch(room._id, {
+      status: 'celebrity_guessing',
+      celebrityTurnIndex: 0,
+      phaseEndsAt: undefined,
+    })
+  },
+})
+
+export const advanceCelebrityTurn = mutation({
+  args: { roomId: v.id('rooms'), guessed: v.boolean() },
+  handler: async (ctx, args) => {
+    const user = await requireCurrentUser(ctx)
+    const room = await ctx.db.get(args.roomId)
+    if (!room || room.status !== 'celebrity_guessing') {
+      throw new Error('There is no celebrity turn to advance.')
+    }
+    const players = await ctx.db
+      .query('players')
+      .withIndex('by_room', (q) => q.eq('roomId', room._id))
+      .collect()
+    const active = players.find(
+      (player) => player.celebrityTurnOrder === (room.celebrityTurnIndex ?? 0),
+    )
+    if (!active) throw new Error('Active player not found.')
+    if (room.hostId !== user._id && active.userId !== user._id) {
+      throw new Error('Only the host or current player can end this turn.')
+    }
+
+    const target = active.celebrityTargetPlayerId
+      ? await ctx.db.get(active.celebrityTargetPlayerId)
+      : null
+    if (target) {
+      await ctx.db.patch(target._id, { celebrityWasGuessed: args.guessed })
+    }
+    if (args.guessed) {
+      await ctx.db.patch(active._id, { score: active.score + 10 })
+    }
+
+    const nextTurn = (room.celebrityTurnIndex ?? 0) + 1
+    if (
+      nextTurn >=
+      players.filter((item) => item.celebrityTurnOrder !== undefined).length
+    ) {
+      await ctx.db.patch(room._id, {
+        status: 'results',
+        celebrityTurnIndex: undefined,
+      })
+    } else {
+      await ctx.db.patch(room._id, { celebrityTurnIndex: nextTurn })
+    }
+  },
+})
+
 export const restartRound = mutation({
   args: { roomId: v.id('rooms') },
   handler: async (ctx, args) => {
@@ -408,6 +622,31 @@ export const restartRound = mutation({
       .collect()
     for (const vote of votes) await ctx.db.delete(vote._id)
 
+    if ((room.gameType ?? 'truth_or_lie') === 'celebrity') {
+      for (const player of players) {
+        await ctx.db.patch(player._id, {
+          role: undefined,
+          statement: undefined,
+          hasSubmitted: false,
+          hasVoted: false,
+          joinedForNextRound: false,
+          celebrityName: undefined,
+          celebrityImageUrl: undefined,
+          celebrityImageStorageId: undefined,
+          celebrityTargetPlayerId: undefined,
+          celebrityTurnOrder: undefined,
+          celebrityWasGuessed: undefined,
+        })
+      }
+      await ctx.db.patch(room._id, {
+        status: 'celebrity_submitting',
+        startedAt: Date.now(),
+        phaseEndsAt: undefined,
+        celebrityTurnIndex: 0,
+      })
+      return
+    }
+
     const roles = assignRoles(
       players.length,
       Math.min(room.liarCount ?? DEFAULT_LIAR_COUNT, players.length - 1),
@@ -429,6 +668,54 @@ export const restartRound = mutation({
       status: 'writing',
       startedAt: now,
       phaseEndsAt: now + durationMs(room, 'writingDurationSeconds'),
+    })
+  },
+})
+
+export const returnToLobby = mutation({
+  args: { roomId: v.id('rooms') },
+  handler: async (ctx, args) => {
+    const user = await requireCurrentUser(ctx)
+    const room = await ctx.db.get(args.roomId)
+    if (!room) throw new Error('Room not found.')
+    if (room.hostId !== user._id) {
+      throw new Error('Only the host can return to the game shelf.')
+    }
+    if (room.status !== 'results' && room.status !== 'finished') {
+      throw new Error('Finish the current round first.')
+    }
+
+    const votes = await ctx.db
+      .query('votes')
+      .withIndex('by_room', (q) => q.eq('roomId', room._id))
+      .collect()
+    for (const vote of votes) await ctx.db.delete(vote._id)
+
+    const players = await ctx.db
+      .query('players')
+      .withIndex('by_room', (q) => q.eq('roomId', room._id))
+      .collect()
+    for (const player of players) {
+      await ctx.db.patch(player._id, {
+        role: undefined,
+        statement: undefined,
+        hasSubmitted: false,
+        hasVoted: false,
+        joinedForNextRound: false,
+        celebrityName: undefined,
+        celebrityImageUrl: undefined,
+        celebrityImageStorageId: undefined,
+        celebrityTargetPlayerId: undefined,
+        celebrityTurnOrder: undefined,
+        celebrityWasGuessed: undefined,
+      })
+    }
+    await ctx.db.patch(room._id, {
+      status: 'waiting',
+      gameType: undefined,
+      startedAt: undefined,
+      phaseEndsAt: undefined,
+      celebrityTurnIndex: undefined,
     })
   },
 })

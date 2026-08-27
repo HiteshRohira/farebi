@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "concurrently -k -n convex,vite -c blue,white \"convex dev\" \"vite dev --port 3000\"",
-    "dev:players": "concurrently -k -n convex,p1,p2,p3 -c blue,green,yellow,magenta \"convex dev\" \"vite dev --port 3000 --strictPort\" \"vite dev --port 3001 --strictPort\" \"vite dev --port 3002 --strictPort\"",
+    "dev:players": "node scripts/dev-players.mjs",
     "dev:web": "vite dev --port 3000",
     "dev:backend": "convex dev",
     "generate-routes": "tsr generate",

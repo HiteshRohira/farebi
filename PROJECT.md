@@ -1,8 +1,10 @@
-# Project: Truth or Lie — Multiplayer Social Deduction Game
+# Project: Farebi — Multiplayer Party Game Platform
 
 ## Overview
 
-A multiplayer party game where players join a room, receive a hidden role (Truth or Lie), submit a statement about themselves, discuss everyone's statements, vote, and receive points.
+A multiplayer party-game room where the host chooses a game for each round.
+The first two games are Truth or Lie and Who’s That?, a celebrity guessing
+game. Players and scores stay in the same room between games.
 
 The core gameplay loop:
 

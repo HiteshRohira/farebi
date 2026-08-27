@@ -5,8 +5,15 @@ export const roomStatus = v.union(
   v.literal('waiting'),
   v.literal('writing'),
   v.literal('voting'),
+  v.literal('celebrity_submitting'),
+  v.literal('celebrity_guessing'),
   v.literal('results'),
   v.literal('finished'),
+)
+
+export const gameType = v.union(
+  v.literal('truth_or_lie'),
+  v.literal('celebrity'),
 )
 
 export default defineSchema({
@@ -28,13 +35,18 @@ export default defineSchema({
     code: v.string(),
     hostId: v.id('users'),
     status: roomStatus,
+    gameType: v.optional(gameType),
     maxPlayers: v.number(),
     liarCount: v.optional(v.number()),
     writingDurationSeconds: v.optional(v.number()),
     discussionVotingDurationSeconds: v.optional(v.number()),
+    // Legacy fields retained so rooms created before the combined timer remain valid.
+    discussionDurationSeconds: v.optional(v.number()),
+    votingDurationSeconds: v.optional(v.number()),
     createdAt: v.number(),
     startedAt: v.optional(v.number()),
     phaseEndsAt: v.optional(v.number()),
+    celebrityTurnIndex: v.optional(v.number()),
   }).index('by_code', ['code']),
 
   players: defineTable({
@@ -47,6 +59,12 @@ export default defineSchema({
     hasVoted: v.boolean(),
     statementOrder: v.optional(v.number()),
     joinedForNextRound: v.optional(v.boolean()),
+    celebrityName: v.optional(v.string()),
+    celebrityImageUrl: v.optional(v.string()),
+    celebrityImageStorageId: v.optional(v.id('_storage')),
+    celebrityTargetPlayerId: v.optional(v.id('players')),
+    celebrityTurnOrder: v.optional(v.number()),
+    celebrityWasGuessed: v.optional(v.boolean()),
     createdAt: v.number(),
   })
     .index('by_room', ['roomId'])

@@ -87,6 +87,21 @@ body {
   display: none;
 }
 
+@keyframes solo-countdown-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.solo-countdown-pop {
+  animation: solo-countdown-pop 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 @media (orientation: portrait) and (max-width: 900px) {
   .solo-portrait-guard {
     display: flex;

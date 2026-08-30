@@ -28,8 +28,8 @@
 
 @theme inline {
   --font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    'Segoe UI', sans-serif;
+    'Avenir Next', Avenir, ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -76,6 +76,21 @@ body {
   font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+}
+
+.farebi-display {
+  font-family:
+    'Arial Rounded MT Bold', 'Avenir Next', Avenir, ui-rounded, sans-serif;
+}
+
+.solo-portrait-guard {
+  display: none;
+}
+
+@media (orientation: portrait) and (max-width: 900px) {
+  .solo-portrait-guard {
+    display: flex;
+  }
 }
 
 button,

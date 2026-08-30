@@ -129,7 +129,12 @@ async function finishWriting(
 }
 
 export const createRoom = mutation({
-  args: { maxPlayers: v.optional(v.number()) },
+  args: {
+    maxPlayers: v.optional(v.number()),
+    gameType: v.optional(
+      v.union(v.literal('truth_or_lie'), v.literal('celebrity')),
+    ),
+  },
   handler: async (ctx, args) => {
     const userId = await upsertCurrentUser(ctx)
     const maxPlayers = args.maxPlayers ?? 20
@@ -151,6 +156,7 @@ export const createRoom = mutation({
       code,
       hostId: userId,
       status: 'waiting',
+      gameType: args.gameType,
       maxPlayers,
       liarCount: DEFAULT_LIAR_COUNT,
       writingDurationSeconds: DEFAULT_WRITING_SECONDS,
@@ -329,6 +335,7 @@ export const getRoom = query({
       code: room.code,
       status: room.status,
       gameType,
+      gameTypeLocked: room.gameType !== undefined,
       maxPlayers: room.maxPlayers,
       liarCount: room.liarCount ?? DEFAULT_LIAR_COUNT,
       writingDurationSeconds:

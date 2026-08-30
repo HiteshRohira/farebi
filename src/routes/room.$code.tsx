@@ -120,9 +120,9 @@ function RoomPage() {
 
   if (!isConvexConfigured) {
     return (
-      <CenteredCard title="Convex is not connected">
+      <CenteredCard title="Multiplayer is taking a quick break">
         <p className="text-sm text-muted-foreground">
-          Configure <code>VITE_CONVEX_URL</code> before opening a room.
+          Head back to the games and try again in a moment.
         </p>
       </CenteredCard>
     )
@@ -145,9 +145,9 @@ function ConvexRoomGate({ code }: { code: string }) {
 
   if (!convexAuth.isAuthenticated) {
     return (
-      <CenteredCard title="Sign-in could not be verified">
+      <CenteredCard title="We couldn’t verify your player">
         <p className="text-sm text-muted-foreground">
-          The server did not accept this session.
+          Sign out, then jump back in.
         </p>
         <Button
           variant="outline"
@@ -587,8 +587,9 @@ function Lobby({ room }: { room: RoomState }) {
   const startGame = useMutation(api.rooms.startGame)
   const [setupOpen, setSetupOpen] = useState(false)
   const [pending, setPending] = useState(false)
+  const lockedGameType = room.gameTypeLocked ? room.gameType : undefined
   const [gameType, setGameType] = useState<'truth_or_lie' | 'celebrity' | null>(
-    null,
+    lockedGameType ?? null,
   )
   const [settings, setSettings] = useState(() => ({
     liarCount: room.liarCount,
@@ -709,6 +710,7 @@ function Lobby({ room }: { room: RoomState }) {
                 playerCount={room.players.length}
                 gameType={gameType}
                 settings={settings}
+                fixedGameType={lockedGameType}
                 onOpenChange={handleSetupOpen}
                 onGameTypeChange={setGameType}
                 onSettingsChange={setSettings}
@@ -756,6 +758,7 @@ function StartGameSetup({
   playerCount,
   gameType,
   settings,
+  fixedGameType,
   onOpenChange,
   onGameTypeChange,
   onSettingsChange,
@@ -766,6 +769,7 @@ function StartGameSetup({
   playerCount: number
   gameType: 'truth_or_lie' | 'celebrity' | null
   settings: RoundSetupSettings
+  fixedGameType?: 'truth_or_lie' | 'celebrity'
   onOpenChange: (open: boolean) => void
   onGameTypeChange: (gameType: 'truth_or_lie' | 'celebrity') => void
   onSettingsChange: (settings: RoundSetupSettings) => void
@@ -774,7 +778,12 @@ function StartGameSetup({
   const isDesktop = useDesktopDialog()
   const trigger = (
     <Button className="w-full" size="lg" disabled={pending || playerCount < 3}>
-      <Sparkles /> Choose a game
+      <Sparkles />
+      {fixedGameType === 'celebrity'
+        ? 'Start Who’s That?'
+        : fixedGameType === 'truth_or_lie'
+          ? 'Set up Truth or Lie'
+          : 'Choose a game'}
     </Button>
   )
   const content = (
@@ -783,6 +792,7 @@ function StartGameSetup({
       playerCount={playerCount}
       gameType={gameType}
       settings={settings}
+      fixedGameType={fixedGameType}
       onGameTypeChange={onGameTypeChange}
       onSettingsChange={onSettingsChange}
       onConfirm={onConfirm}
@@ -795,9 +805,13 @@ function StartGameSetup({
         <DialogTrigger asChild>{trigger}</DialogTrigger>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Pick tonight’s game</DialogTitle>
+            <DialogTitle>
+              {fixedGameType ? 'Ready the room' : 'Pick tonight’s game'}
+            </DialogTitle>
             <DialogDescription>
-              The room stays together when you switch games.
+              {fixedGameType
+                ? 'Everyone’s here. Start when the room is ready.'
+                : 'The room stays together when you switch games.'}
             </DialogDescription>
           </DialogHeader>
           {content}
@@ -811,9 +825,13 @@ function StartGameSetup({
       <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Pick tonight’s game</SheetTitle>
+          <SheetTitle>
+            {fixedGameType ? 'Ready the room' : 'Pick tonight’s game'}
+          </SheetTitle>
           <SheetDescription>
-            The room stays together when you switch games.
+            {fixedGameType
+              ? 'Everyone’s here. Start when the room is ready.'
+              : 'The room stays together when you switch games.'}
           </SheetDescription>
         </SheetHeader>
         {content}
@@ -827,6 +845,7 @@ function RoundSetupForm({
   playerCount,
   gameType,
   settings,
+  fixedGameType,
   onGameTypeChange,
   onSettingsChange,
   onConfirm,
@@ -835,29 +854,34 @@ function RoundSetupForm({
   playerCount: number
   gameType: 'truth_or_lie' | 'celebrity' | null
   settings: RoundSetupSettings
+  fixedGameType?: 'truth_or_lie' | 'celebrity'
   onGameTypeChange: (gameType: 'truth_or_lie' | 'celebrity') => void
   onSettingsChange: (settings: RoundSetupSettings) => void
   onConfirm: () => void
 }) {
+  const selectedGame = fixedGameType ?? gameType
+
   return (
     <div className="mt-7 grid gap-5 sm:mt-0">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <GameChoice
-          selected={gameType === 'truth_or_lie'}
-          icon={<UserRoundCheck className="size-5" />}
-          title="Truth or Lie"
-          description="Write a story, spot the liars, score the room."
-          onClick={() => onGameTypeChange('truth_or_lie')}
-        />
-        <GameChoice
-          selected={gameType === 'celebrity'}
-          icon={<Camera className="size-5" />}
-          title="Who’s That?"
-          description="Pick famous faces and take turns guessing aloud."
-          onClick={() => onGameTypeChange('celebrity')}
-        />
-      </div>
-      {gameType === 'truth_or_lie' ? (
+      {!fixedGameType ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <GameChoice
+            selected={gameType === 'truth_or_lie'}
+            icon={<UserRoundCheck className="size-5" />}
+            title="Truth or Lie"
+            description="Write a story, spot the liars, score the room."
+            onClick={() => onGameTypeChange('truth_or_lie')}
+          />
+          <GameChoice
+            selected={gameType === 'celebrity'}
+            icon={<Camera className="size-5" />}
+            title="Who’s That?"
+            description="Pick famous faces and take turns guessing aloud."
+            onClick={() => onGameTypeChange('celebrity')}
+          />
+        </div>
+      ) : null}
+      {selectedGame === 'truth_or_lie' ? (
         <>
           <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card">
             <div className="border-r border-border p-4">
@@ -911,7 +935,7 @@ function RoundSetupForm({
             }
           />
         </>
-      ) : gameType === 'celebrity' ? (
+      ) : selectedGame === 'celebrity' ? (
         <div className="rounded-lg border border-border bg-card p-4 text-sm leading-6 text-muted-foreground">
           Everyone privately picks one well-known person. Turns run
           alphabetically; the guesser looks away while the rest of the room sees
@@ -922,7 +946,7 @@ function RoundSetupForm({
           Choose a game to continue.
         </p>
       )}
-      <Button size="lg" disabled={pending || !gameType} onClick={onConfirm}>
+      <Button size="lg" disabled={pending || !selectedGame} onClick={onConfirm}>
         {pending ? 'Starting…' : 'Start game'}
       </Button>
     </div>
@@ -1177,8 +1201,8 @@ function CelebritySubmission({ room }: { room: RoomState }) {
           Pick someone everyone knows
         </h1>
         <p className="mt-3 text-muted-foreground">
-          Search the curated catalogue or type any name. A photo is helpful,
-          never required.
+          Find a familiar face or add one of your own. A photo makes the reveal
+          even better.
         </p>
       </div>
 

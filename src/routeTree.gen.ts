@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SoloWhosThatRouteImport } from './routes/solo.whos-that'
 import { Route as RoomCodeRouteImport } from './routes/room.$code'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SoloWhosThatRoute = SoloWhosThatRouteImport.update({
+  id: '/solo/whos-that',
+  path: '/solo/whos-that',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RoomCodeRoute = RoomCodeRouteImport.update({
@@ -26,27 +32,31 @@ const RoomCodeRoute = RoomCodeRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/room/$code': typeof RoomCodeRoute
+  '/solo/whos-that': typeof SoloWhosThatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/room/$code': typeof RoomCodeRoute
+  '/solo/whos-that': typeof SoloWhosThatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/room/$code': typeof RoomCodeRoute
+  '/solo/whos-that': typeof SoloWhosThatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/room/$code'
+  fullPaths: '/' | '/room/$code' | '/solo/whos-that'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/room/$code'
-  id: '__root__' | '/' | '/room/$code'
+  to: '/' | '/room/$code' | '/solo/whos-that'
+  id: '__root__' | '/' | '/room/$code' | '/solo/whos-that'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   RoomCodeRoute: typeof RoomCodeRoute
+  SoloWhosThatRoute: typeof SoloWhosThatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/solo/whos-that': {
+      id: '/solo/whos-that'
+      path: '/solo/whos-that'
+      fullPath: '/solo/whos-that'
+      preLoaderRoute: typeof SoloWhosThatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/room/$code': {
@@ -71,6 +88,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   RoomCodeRoute: RoomCodeRoute,
+  SoloWhosThatRoute: SoloWhosThatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

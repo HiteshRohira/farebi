@@ -14,6 +14,14 @@ import {
 } from 'lucide-react'
 
 import type { Celebrity } from '@/lib/celebrities'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { resolveCelebrityPhoto } from '@/lib/celebrities'
 import { createCelebrityDeck } from '@/lib/solo-game'
 import { cn } from '@/lib/utils'
@@ -61,11 +69,6 @@ function isStandalone() {
   )
 }
 
-function supportsElementFullscreen() {
-  const element = document.documentElement as unknown as FullscreenElement
-  return Boolean(element.requestFullscreen ?? element.webkitRequestFullscreen)
-}
-
 export const Route = createFileRoute('/solo/whos-that')({
   component: SoloWhosThat,
 })
@@ -81,7 +84,7 @@ function SoloWhosThat() {
   const [lastResult, setLastResult] = useState<AnswerResult | null>(null)
   const [correct, setCorrect] = useState(0)
   const [skipped, setSkipped] = useState(0)
-  const [fullscreenAvailable] = useState(() => supportsElementFullscreen())
+  const [fullscreenHelpOpen, setFullscreenHelpOpen] = useState(false)
   const [showAppleInstallTip] = useState(
     () => isAppleMobile() && !isStandalone(),
   )
@@ -216,6 +219,13 @@ function SoloWhosThat() {
     } catch {
       // Safari may require the player to rotate manually.
     }
+
+    return isFullscreen() || isStandalone()
+  }
+
+  async function openFullscreen() {
+    const enteredFullscreen = await requestLandscape()
+    if (!enteredFullscreen) setFullscreenHelpOpen(true)
   }
 
   function start() {
@@ -262,6 +272,12 @@ function SoloWhosThat() {
         </p>
       </div>
 
+      <FullscreenHelp
+        open={fullscreenHelpOpen}
+        appleDevice={showAppleInstallTip}
+        onOpenChange={setFullscreenHelpOpen}
+      />
+
       <div className="grid h-full grid-rows-[minmax(0,1fr)_52px] gap-1.5 p-1.5 [padding-bottom:max(0.375rem,env(safe-area-inset-bottom))]">
         <main
           className={cn(
@@ -296,11 +312,10 @@ function SoloWhosThat() {
           stage={roundStage}
           correct={correct}
           skipped={skipped}
-          fullscreenAvailable={fullscreenAvailable}
           onPass={() => answer('skip')}
           onCorrect={() => answer('correct')}
           onNext={beginCountdown}
-          onFullscreen={() => void requestLandscape()}
+          onFullscreen={() => void openFullscreen()}
           onEnd={() => setPhase('finished')}
         />
       </div>
@@ -406,7 +421,6 @@ function GameDock({
   stage,
   correct,
   skipped,
-  fullscreenAvailable,
   onPass,
   onCorrect,
   onNext,
@@ -416,7 +430,6 @@ function GameDock({
   stage: RoundStage
   correct: number
   skipped: number
-  fullscreenAvailable: boolean
   onPass: () => void
   onCorrect: () => void
   onNext: () => void
@@ -464,16 +477,14 @@ function GameDock({
       </div>
 
       <div className="flex items-center gap-0.5">
-        {fullscreenAvailable ? (
-          <button
-            type="button"
-            aria-label="Enter fullscreen"
-            className="grid size-10 place-items-center rounded-lg text-white/45 hover:bg-white/5 hover:text-white sm:rounded-xl"
-            onClick={onFullscreen}
-          >
-            <Expand className="size-4" />
-          </button>
-        ) : null}
+        <button
+          type="button"
+          aria-label="Enter fullscreen"
+          className="grid size-10 place-items-center rounded-lg text-white/45 hover:bg-white/5 hover:text-white sm:rounded-xl"
+          onClick={onFullscreen}
+        >
+          <Expand className="size-4" />
+        </button>
         <button
           type="button"
           aria-label="End round"
@@ -484,6 +495,60 @@ function GameDock({
         </button>
       </div>
     </div>
+  )
+}
+
+function FullscreenHelp({
+  open,
+  appleDevice,
+  onOpenChange,
+}: {
+  open: boolean
+  appleDevice: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md gap-3 border-white/12 bg-[#10130c] p-4 text-white sm:p-5">
+        <DialogHeader className="gap-1.5">
+          <p className="font-mono text-[10px] font-black uppercase tracking-[0.2em] text-[#d9ff43]">
+            Full-screen view
+          </p>
+          <DialogTitle className="farebi-display text-2xl font-black tracking-[-0.03em]">
+            Add Farebi to your Home Screen
+          </DialogTitle>
+          <DialogDescription className="leading-5">
+            {appleDevice
+              ? 'Safari and Brave can’t hide their bars from a regular iPhone or iPad tab. Open Farebi from your Home Screen instead.'
+              : 'This browser blocked full screen. Opening Farebi from your Home Screen gives the game more room.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <ol className="grid grid-cols-3 gap-2 text-center font-mono text-[9px] font-black uppercase tracking-[0.08em] text-white/70 sm:text-[10px]">
+          <li className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-2.5">
+            <span className="block text-[#d9ff43]">1</span>
+            Tap Share
+          </li>
+          <li className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-2.5">
+            <span className="block text-[#d9ff43]">2</span>
+            Add to Home Screen
+          </li>
+          <li className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-2.5">
+            <span className="block text-[#d9ff43]">3</span>
+            Open Farebi
+          </li>
+        </ol>
+
+        <DialogClose asChild>
+          <button
+            type="button"
+            className="mt-1 h-10 rounded-lg bg-[#d9ff43] text-xs font-black uppercase tracking-[0.12em] text-[#10130c]"
+          >
+            Got it
+          </button>
+        </DialogClose>
+      </DialogContent>
+    </Dialog>
   )
 }
 

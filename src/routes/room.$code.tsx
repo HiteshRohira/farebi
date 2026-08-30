@@ -9,6 +9,7 @@ import {
   Check,
   Clock3,
   Crown,
+  ExternalLink,
   ImagePlus,
   Link2,
   LoaderCircle,
@@ -68,7 +69,11 @@ import {
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { useFarebiAuth } from '@/lib/auth-client'
-import { CELEBRITIES, resolveCelebrityPhoto } from '@/lib/celebrities'
+import {
+  CELEBRITIES,
+  getGoogleSearchUrl,
+  resolveCelebrityPhoto,
+} from '@/lib/celebrities'
 import { cn } from '@/lib/utils'
 import { isConvexConfigured } from '@/providers/app-provider'
 
@@ -1060,11 +1065,27 @@ function CelebritySubmission({ room }: { room: RoomState }) {
   }, [photoFile])
 
   const normalizedSearch = search.trim().toLocaleLowerCase()
-  const matches = CELEBRITIES.filter((celebrity) =>
-    `${celebrity.name} ${celebrity.category}`
-      .toLocaleLowerCase()
-      .includes(normalizedSearch),
-  ).slice(0, 8)
+  const featuredNames = [
+    'Shah Rukh Khan',
+    'Virat Kohli',
+    'Deepika Padukone',
+    'M. S. Dhoni',
+    'A. R. Rahman',
+    'Priyanka Chopra Jonas',
+    'Amitabh Bachchan',
+    'Rajinikanth',
+  ]
+  const matches = (
+    normalizedSearch
+      ? CELEBRITIES.filter((celebrity) =>
+          celebrity.name.toLocaleLowerCase().includes(normalizedSearch),
+        )
+      : featuredNames
+          .map((featuredName) =>
+            CELEBRITIES.find((celebrity) => celebrity.name === featuredName),
+          )
+          .filter((celebrity) => celebrity !== undefined)
+  ).slice(0, 10)
 
   async function chooseCelebrity(celebrity: (typeof CELEBRITIES)[number]) {
     setName(celebrity.name)
@@ -1156,8 +1177,8 @@ function CelebritySubmission({ room }: { room: RoomState }) {
           Pick someone everyone knows
         </h1>
         <p className="mt-3 text-muted-foreground">
-          Search the starter shelf or type any name. A photo is helpful, never
-          required.
+          Search the curated catalogue or type any name. A photo is helpful,
+          never required.
         </p>
       </div>
 
@@ -1168,7 +1189,7 @@ function CelebritySubmission({ room }: { room: RoomState }) {
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
-                placeholder="Search actors, sport, music…"
+                placeholder={`Search ${CELEBRITIES.length} famous people…`}
                 className="pl-9"
                 onChange={(event) => setSearch(event.target.value)}
               />
@@ -1187,19 +1208,23 @@ function CelebritySubmission({ room }: { room: RoomState }) {
                   onClick={() => void chooseCelebrity(celebrity)}
                 >
                   <span className="text-sm font-medium">{celebrity.name}</span>
-                  <span
-                    className={cn(
-                      'text-xs',
-                      name === celebrity.name
-                        ? 'text-background/60'
-                        : 'text-muted-foreground',
-                    )}
-                  >
-                    {celebrity.category}
-                  </span>
+                  {name === celebrity.name ? (
+                    <Check className="size-4" />
+                  ) : null}
                 </button>
               ))}
             </div>
+            {search.trim().length >= 2 ? (
+              <a
+                href={getGoogleSearchUrl(search)}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-between rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:border-white/30 hover:text-foreground"
+              >
+                <span>Search Google for “{search.trim()}”</span>
+                <ExternalLink className="size-4 shrink-0" />
+              </a>
+            ) : null}
           </CardContent>
         </Card>
 

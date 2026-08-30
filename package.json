@@ -10,6 +10,7 @@
     "dev:players": "node scripts/dev-players.mjs",
     "dev:web": "vite dev --port 3000",
     "dev:backend": "convex dev",
+    "celebrities:photos": "node scripts/celebrity-photos.mjs",
     "generate-routes": "tsr generate",
     "build": "vite build",
     "preview": "vite preview",

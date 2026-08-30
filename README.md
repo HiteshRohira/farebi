@@ -4,9 +4,12 @@ A realtime multiplayer party-game platform built with React, TanStack Router,
 Tailwind CSS, shadcn/ui, Convex, and Better Auth. The same room can currently
 play Truth or Lie and Who’s That?, with the host choosing the game each round.
 
-Who’s That? ships with a deliberately mainstream, India-relevant starter
-catalogue. Built-in photos are resolved through Wikipedia's PageImages API;
-custom picks can be a name only or include a photo uploaded to Convex storage.
+Who’s That? ships with a conservative catalogue of people broadly recognizable
+in India. Built-in photos are resolved through
+Wikipedia's PageImages API; custom picks can be a name only or include a photo
+uploaded to Convex storage. See the
+[catalogue methodology](docs/celebrity-catalogue.md) for source and selection
+details.
 
 ## Stack boundaries
 

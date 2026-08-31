@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Same Same — Farebi’s impostor game</title>
+  <script>
+(() => {
+  const devicePreference = window.matchMedia("(prefers-color-scheme: dark)");
+  let mode = devicePreference.matches ? "dark" : "light";
+  try {
+    const saved = localStorage.getItem("heple-mode");
+    mode = saved === "light" || saved === "dark"
+      ? saved
+      : mode;
+  } catch {}
+  document.documentElement.dataset.mode = mode;
+})();
+</script>
+  <style>
+:root {
+  color-scheme: light;
+  --radius: 0.625rem;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --shadow: 0 1px 3px color-mix(in srgb, black 10%, transparent);
+  
+  --bg: oklch(1 0 0);
+  --surface: oklch(1 0 0);
+  --surface-raised: oklch(0.97 0 0);
+  --text: oklch(0.145 0 0);
+  --muted: oklch(0.556 0 0);
+  --border: oklch(0.922 0 0);
+  --accent: oklch(0.205 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --accent-soft: oklch(0.97 0 0);
+  --sidebar: oklch(1 0 0);
+  --sidebar-text: oklch(0.145 0 0);
+  --sidebar-muted: color-mix(in srgb, oklch(0.145 0 0) 67%, oklch(1 0 0));
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-text: oklch(0.145 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --code-bg: color-mix(in srgb, oklch(1 0 0) 90%, oklch(0.145 0 0));
+  --code-text: oklch(0.145 0 0);
+  --code-muted: color-mix(in srgb, oklch(0.145 0 0) 68%, var(--code-bg));
+  --code-border: color-mix(in srgb, oklch(0.145 0 0) 14%, var(--code-bg));
+  --code-highlight: color-mix(in srgb, oklch(0.205 0 0) 11%, var(--code-bg));
+  --accent-readable: color-mix(in srgb, oklch(0.205 0 0) 50%, oklch(0.145 0 0));
+  --secondary-text: color-mix(in srgb, oklch(0.145 0 0) 67%, oklch(1 0 0));
+  --rule: color-mix(in srgb, oklch(0.922 0 0) 72%, transparent);
+  --info: oklch(0.488 0.243 264.376);
+  --info-soft: color-mix(in srgb, var(--info) 18%, oklch(1 0 0));
+  --info-text: color-mix(in srgb, var(--info) 50%, oklch(0.145 0 0));
+  --info-border: color-mix(in srgb, var(--info) 58%, oklch(0.922 0 0));
+  --success: oklch(0.6 0.118 184.704);
+  --success-soft: color-mix(in srgb, var(--success) 18%, oklch(1 0 0));
+  --success-text: color-mix(in srgb, var(--success) 50%, oklch(0.145 0 0));
+  --success-border: color-mix(in srgb, var(--success) 58%, oklch(0.922 0 0));
+  --warning: oklch(0.769 0.188 70.08);
+  --warning-soft: color-mix(in srgb, var(--warning) 18%, oklch(1 0 0));
+  --warning-text: color-mix(in srgb, var(--warning) 50%, oklch(0.145 0 0));
+  --warning-border: color-mix(in srgb, var(--warning) 58%, oklch(0.922 0 0));
+  --danger: oklch(0.577 0.245 27.325);
+  --danger-soft: color-mix(in srgb, var(--danger) 18%, oklch(1 0 0));
+  --danger-text: color-mix(in srgb, var(--danger) 50%, oklch(0.145 0 0));
+  --danger-border: color-mix(in srgb, var(--danger) 58%, oklch(0.922 0 0));
+}
+:root[data-mode="dark"] {
+  color-scheme: dark;
+  
+  --bg: oklch(0.145 0 0);
+  --surface: oklch(0.205 0 0);
+  --surface-raised: oklch(0.269 0 0);
+  --text: oklch(0.985 0 0);
+  --muted: oklch(0.708 0 0);
+  --border: oklch(0.275 0 0);
+  --accent: oklch(0.922 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --accent-soft: oklch(0.371 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-text: oklch(0.985 0 0);
+  --sidebar-muted: color-mix(in srgb, oklch(0.985 0 0) 67%, oklch(0.205 0 0));
+  --sidebar-accent: oklch(0.371 0 0);
+  --sidebar-accent-text: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.275 0 0);
+  --code-bg: color-mix(in srgb, oklch(0.145 0 0) 72%, black);
+  --code-text: oklch(0.985 0 0);
+  --code-muted: color-mix(in srgb, oklch(0.985 0 0) 68%, var(--code-bg));
+  --code-border: color-mix(in srgb, oklch(0.985 0 0) 18%, var(--code-bg));
+  --code-highlight: color-mix(in srgb, oklch(0.922 0 0) 22%, var(--code-bg));
+  --accent-readable: color-mix(in srgb, oklch(0.922 0 0) 50%, oklch(0.985 0 0));
+  --secondary-text: color-mix(in srgb, oklch(0.985 0 0) 67%, oklch(0.145 0 0));
+  --rule: color-mix(in srgb, oklch(0.275 0 0) 72%, transparent);
+  --info: oklch(0.488 0.243 264.376);
+  --info-soft: color-mix(in srgb, var(--info) 24%, oklch(0.205 0 0));
+  --info-text: color-mix(in srgb, var(--info) 55%, oklch(0.985 0 0));
+  --info-border: color-mix(in srgb, var(--info) 58%, oklch(0.275 0 0));
+  --success: oklch(0.696 0.17 162.48);
+  --success-soft: color-mix(in srgb, var(--success) 24%, oklch(0.205 0 0));
+  --success-text: color-mix(in srgb, var(--success) 55%, oklch(0.985 0 0));
+  --success-border: color-mix(in srgb, var(--success) 58%, oklch(0.275 0 0));
+  --warning: oklch(0.769 0.188 70.08);
+  --warning-soft: color-mix(in srgb, var(--warning) 24%, oklch(0.205 0 0));
+  --warning-text: color-mix(in srgb, var(--warning) 55%, oklch(0.985 0 0));
+  --warning-border: color-mix(in srgb, var(--warning) 58%, oklch(0.275 0 0));
+  --danger: oklch(0.704 0.191 22.216);
+  --danger-soft: color-mix(in srgb, var(--danger) 24%, oklch(0.205 0 0));
+  --danger-text: color-mix(in srgb, var(--danger) 55%, oklch(0.985 0 0));
+  --danger-border: color-mix(in srgb, var(--danger) 58%, oklch(0.275 0 0));
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15.5px;
+  line-height: 1.68;
+  transition: background-color .2s ease, color .2s ease;
+}
+a { color: var(--text); text-decoration-color: var(--accent-readable); text-decoration-thickness: .1em; text-underline-offset: .18em; }
+a:hover { text-decoration-color: currentColor; text-decoration-thickness: .14em; }
+a:focus-visible, summary:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; border-radius: 3px; }
+.shell { width: min(760px, calc(100% - 40px)); margin: 0 auto; padding: 64px 0 96px; }
+.mode-toggle { position: fixed; z-index: 30; top: 16px; right: 16px; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); box-shadow: none; cursor: pointer; transition: background-color .2s ease, border-color .2s ease, color .2s ease, transform .2s ease; }
+.mode-toggle:hover { transform: translateY(-1px); }
+.mode-toggle:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+.mode-icon { width: 18px; height: 18px; }
+.mode-icon-dark { display: none; }
+:root[data-mode="dark"] .mode-icon-light { display: none; }
+:root[data-mode="dark"] .mode-icon-dark { display: block; }
+.hero { max-width: none; margin: 0 0 42px; padding: 0 0 32px; border-bottom: 1px solid var(--rule); }
+h1, h2, h3, h4, h5, h6 { line-height: 1.18; letter-spacing: -.025em; text-wrap: balance; }
+h1 { max-width: 18ch; margin: 0; font-size: clamp(2.2rem, 5vw, 3.2rem); letter-spacing: -.035em; }
+h2 { margin: 0 0 18px; font-size: clamp(1.45rem, 3vw, 1.85rem); }
+h3 { font-size: 1.12rem; }
+.summary { max-width: 64ch; margin: 16px 0 0; color: var(--secondary-text); font-size: 1.02rem; }
+main { min-width: 0; }
+main > .section { margin: 0; padding: 34px 0 40px; scroll-margin-top: 28px; border: 0; border-top: 1px solid var(--rule); border-radius: 0; background: transparent; box-shadow: none; }
+main > .section:first-child { border-top: 0; }
+.section .section { margin: 28px 0 0; padding: 0 0 0 18px; scroll-margin-top: 28px; border: 0; border-left: 2px solid var(--rule); border-radius: 0; background: transparent; box-shadow: none; }
+.section .section h3 { margin-top: 0; }
+p { max-width: 75ch; }
+code:not(pre code) { padding: .12em .36em; background: var(--accent-soft); border-radius: max(3px, calc(var(--radius) / 3)); font-family: var(--font-mono); font-size: .9em; }
+.step-meta div { padding: 14px 16px; background: color-mix(in srgb, var(--surface-raised) 36%, var(--surface)); border: 1px solid var(--rule); border-radius: max(4px, calc(var(--radius) * .7)); }
+.fact-label { display: block; color: var(--secondary-text); font-size: .73rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.fact-value { display: block; margin-top: 3px; font-weight: 700; }
+ul, ol { padding-left: 1.4rem; }
+li + li { margin-top: .55rem; }
+.callout { margin: 22px 0; padding: 18px 20px; border: 1px solid var(--rule); border-left-width: 3px; border-radius: 4px; }
+.callout p { margin: 4px 0 0; }
+.callout-title { display: block; }
+.callout-info { border-left-color: var(--info); background: var(--info-soft); }
+.callout-warning { border-left-color: var(--warning); background: var(--warning-soft); }
+.callout-success { border-left-color: var(--success); background: var(--success-soft); }
+.steps { margin: 24px 0; padding: 0; list-style: none; counter-reset: none; }
+.steps > li { display: grid; grid-template-columns: 38px 1fr; gap: 14px; margin: 0; padding: 0 0 28px; position: relative; }
+.steps > li:not(:last-child)::before { content: ""; position: absolute; left: 18px; top: 38px; bottom: 0; width: 1px; background: var(--rule); }
+.step-number { z-index: 1; display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--info-border); border-radius: 50%; background: var(--info-soft); color: var(--info-text); font-weight: 750; }
+.steps h3 { margin: 5px 0 4px; }
+.steps p { margin: 0; color: var(--secondary-text); }
+.step-meta { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0 0; }
+.step-meta div { padding: 6px 9px; }
+.badge { display: inline-flex; align-items: center; padding: .2em .55em; border: 1px solid var(--rule); border-radius: 999px; font-size: .72em; font-weight: 720; letter-spacing: .025em; text-transform: uppercase; vertical-align: .12em; }
+.status-done, .severity-low { color: var(--success-text); border-color: var(--success-border); background: var(--success-soft); }
+.status-active, .severity-medium { color: var(--warning-text); border-color: var(--warning-border); background: var(--warning-soft); }
+.status-blocked, .severity-critical { color: var(--danger-text); border-color: var(--danger-border); background: var(--danger-soft); }
+.status-planned, .severity-high { color: var(--info-text); border-color: var(--info-border); background: var(--info-soft); }
+.table-wrap { max-width: 100%; margin: 24px 0; overflow-x: auto; border: 1px solid var(--rule); border-radius: 4px; box-shadow: none; }
+table { width: 100%; border-collapse: collapse; background: transparent; font-size: .92rem; }
+thead { background: color-mix(in srgb, var(--surface-raised) 48%, var(--surface)); }
+caption { padding: 14px 16px; text-align: left; font-weight: 750; }
+th, td { padding: 12px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { color: var(--secondary-text); font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; }
+tbody tr:last-child td { border-bottom: 0; }
+.align-center { text-align: center; }
+.align-right { text-align: right; }
+.code-block { margin: 24px 0; overflow: hidden; border: 1px solid var(--code-border); border-radius: 4px; background: var(--code-bg); color: var(--code-text); box-shadow: none; }
+.code-toolbar { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 10px 6px 14px; border-bottom: 1px solid var(--code-border); }
+.code-label { overflow: hidden; font-family: var(--font-mono); font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
+.copy-code { flex: 0 0 auto; margin-left: auto; padding: 5px 9px; border: 1px solid var(--code-border); border-radius: 6px; background: transparent; color: inherit; font: 700 .72rem/1 var(--font-sans); cursor: pointer; }
+.copy-code:hover { background: var(--code-highlight); }
+.copy-code:focus-visible { outline: 2px solid var(--code-text); outline-offset: 2px; }
+pre { margin: 0; padding: 10px 0; overflow-x: auto; font: .84rem/.75rem var(--font-mono); }
+.code-line { display: grid; grid-template-columns: 3.2rem max-content; min-width: 100%; padding: 0 18px 0 0; }
+.code-line.highlighted { background: var(--code-highlight); box-shadow: inset 3px 0 var(--accent); }
+.line-number { padding-right: 14px; color: var(--code-muted); text-align: right; user-select: none; }
+figcaption { padding: 9px 14px; border-top: 1px solid var(--code-border); color: var(--code-muted); font-size: .78rem; }
+details { margin: 20px 0; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-raised); box-shadow: none; }
+summary { padding: 15px 18px; cursor: pointer; font-weight: 750; }
+.details-body { padding: 0 18px 18px; }
+.toc { position: fixed; z-index: 20; top: clamp(100px, 22vh, 220px); right: 0; width: min(280px, 86vw); transform: translateX(calc(100% - 38px)); transition: transform .42s cubic-bezier(.22, 1, .36, 1); }
+.toc:hover, .toc:focus, .toc:focus-within { transform: translateX(0); }
+.toc-dots { position: absolute; top: 12px; left: 0; display: grid; place-items: center; width: 38px; height: 44px; color: var(--sidebar-muted); font-weight: 900; letter-spacing: 2px; transform: rotate(90deg); transform-origin: center; transition: opacity .24s ease, translate .42s cubic-bezier(.22, 1, .36, 1); }
+.toc:hover .toc-dots, .toc:focus .toc-dots, .toc:focus-within .toc-dots { opacity: 0; translate: 12px 0; }
+.toc-panel { margin-left: 38px; padding: 18px 20px 20px; border: 1px solid var(--sidebar-border); border-right: 0; border-radius: var(--radius) 0 0 var(--radius); background: color-mix(in srgb, var(--sidebar) 94%, transparent); color: var(--sidebar-text); box-shadow: var(--shadow); backdrop-filter: blur(14px); }
+.toc-title { display: block; margin-bottom: 10px; color: var(--sidebar-text); font-size: .72rem; letter-spacing: .09em; text-transform: uppercase; }
+.toc a { display: block; padding: 6px 10px; overflow: hidden; border-radius: var(--radius); color: var(--sidebar-muted); font-size: .84rem; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.toc a:hover, .toc a:focus-visible { color: var(--sidebar-accent-text); background: var(--sidebar-accent); }
+.toc-depth-1 { padding-left: 22px !important; }
+.toc-depth-2 { padding-left: 34px !important; }
+.toc-depth-3 { padding-left: 46px !important; }
+.toc-depth-4, .toc-depth-5 { padding-left: 58px !important; }
+@media (max-width: 700px) {
+  .shell { width: min(100% - 28px, 760px); padding-top: 56px; }
+  .toc { display: none !important; }
+}
+@media print {
+  :root { --bg: #fff; --surface: #fff; --surface-raised: #fff; --text: #111; --muted: #555; --border: #ccc; --shadow: none; }
+  .shell { width: 100%; padding: 0; }
+  .toc, .mode-toggle { display: none; }
+  .section, details { break-inside: avoid; }
+}</style>
+</head>
+<body>
+  <button class="mode-toggle" type="button" data-mode-toggle aria-label="Switch color mode"><svg class="mode-icon mode-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"></path></svg><svg class="mode-icon mode-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></button>
+  <div class="shell">
+    <header class="hero"><h1>Same Same — Farebi’s impostor game</h1><p class="summary">A rules-first product and implementation plan for a social deduction game where everyone receives a secret word, one player receives a near-match, and the room must identify who does not quite belong.</p></header>
+    <main><section class="section" id="section-1" aria-labelledby="section-1-title">
+  <h2 id="section-1-title">Product call</h2>
+  <aside class="callout callout-success"><strong class="callout-title">Recommended launch concept: Same Same</strong><p><strong>Everyone gets a word. Someone got the wrong one. </strong>Most players see the same secret; one player sees a related decoy. Nobody is told which side they are on. Each person locks a short clue, the clues appear together, the room debates, and everyone votes for the suspected impostor.</p></aside>
+<p>Why this fits Farebi: it reuses the platform’s strongest primitives—private information, simultaneous submissions, discussion, secret ballots, realtime phase changes, persistent room scores—and produces a different kind of bluff from Truth or Lie. The app supplies fairness and secrecy; the people supply the theatre.</p>
+<div class="table-wrap"><table><caption>Name directions</caption><thead><tr><th class="align-left" scope="col">Name</th><th class="align-left" scope="col">Promise</th><th class="align-left" scope="col">Verdict</th></tr></thead><tbody><tr><td class="align-left"><strong>Same Same</strong></td><td class="align-left">Two almost-identical words; spot what feels off.</td><td class="align-left"><span class="badge status-active">active</span> Recommended: playful, ownable, and explains the twist.</td></tr><tr><td class="align-left">One of Us?</td><td class="align-left">Social suspicion and a strong reveal line.</td><td class="align-left"><span class="badge status-planned">planned</span> Best clear-English fallback.</td></tr><tr><td class="align-left">Nakli</td><td class="align-left">Punchy, mischievous, and tonally close to Farebi.</td><td class="align-left"><span class="badge status-planned">planned</span> Great pack or mode name; validate broad comprehension.</td></tr></tbody></table></div>
+<aside class="callout callout-info"><strong class="callout-title">Scope assumption</strong><p>Ship one-impostor Near Match as the polished V1 for 4–20 players. Model the rules as a mode so Blank Slate and team variants can arrive without another schema redesign.</p></aside>
+</section>
+<section class="section" id="section-2" aria-labelledby="section-2-title">
+  <h2 id="section-2-title">Three playable concepts</h2>
+  <div class="table-wrap"><table><caption>Concept comparison</caption><thead><tr><th class="align-left" scope="col">Concept</th><th class="align-left" scope="col">Private information</th><th class="align-left" scope="col">Best tension</th><th class="align-left" scope="col">Build cost</th><th class="align-left" scope="col">Recommendation</th></tr></thead><tbody><tr><td class="align-left"><strong>Near Match</strong></td><td class="align-left">Crew: Coffee. Impostor: Tea. Nobody sees a role label.</td><td class="align-left">Players may not know they are the odd one until the clues turn.</td><td class="align-left"><span class="badge severity-medium">medium</span></td><td class="align-left"><strong>Launch default</strong></td></tr><tr><td class="align-left">Blank Slate</td><td class="align-left">Crew sees Coffee. Impostor sees Drinks and knows their role.</td><td class="align-left">High-skill bluffing plus a last-chance word steal.</td><td class="align-left"><span class="badge severity-low">low</span></td><td class="align-left">Advanced mode after V1 tuning</td></tr><tr><td class="align-left">Secret Scene</td><td class="align-left">Crew answers the same scenario; impostor gets a neighboring scenario.</td><td class="align-left">Longer, funnier answers and emergent storytelling.</td><td class="align-left"><span class="badge severity-high">high</span></td><td class="align-left">Future standalone remix</td></tr></tbody></table></div>
+<details open><summary>Example rounds</summary><div class="details-body"><div class="table-wrap"><table><caption>Near-match prompt pairs</caption><thead><tr><th class="align-left" scope="col">Category</th><th class="align-left" scope="col">Crew word</th><th class="align-left" scope="col">Impostor word</th><th class="align-left" scope="col">Why it works</th></tr></thead><tbody><tr><td class="align-left">Food &amp; drink</td><td class="align-left">Coffee</td><td class="align-left">Tea</td><td class="align-left">Shared rituals; different preparation and taste.</td></tr><tr><td class="align-left">Places</td><td class="align-left">Airport</td><td class="align-left">Railway station</td><td class="align-left">Queues, luggage, tickets, and waiting overlap.</td></tr><tr><td class="align-left">Entertainment</td><td class="align-left">Cinema</td><td class="align-left">Theatre</td><td class="align-left">Audience clues sound safe until screens and stages appear.</td></tr><tr><td class="align-left">Everyday</td><td class="align-left">Pillow</td><td class="align-left">Blanket</td><td class="align-left">Both belong in bed; texture and function separate them.</td></tr></tbody></table></div>
+<aside class="callout callout-warning"><strong class="callout-title">Prompt quality is the game</strong><p>Pairs must overlap enough to permit a plausible clue but differ enough to create evidence. Avoid obscure trivia, strict gender or class assumptions, region-specific knowledge in the Mixed pack, and pairs where one term contains the other.</p></aside></div></details>
+</section>
+<section class="section" id="section-3" aria-labelledby="section-3-title">
+  <h2 id="section-3-title">Player-facing rulebook</h2>
+  <details open><summary>Setup and objective</summary><div class="details-body"><ul><li><strong>Players: </strong>4–20; 5–10 is the sweet spot.</li><li><strong>Round length: </strong>about 3–5 minutes.</li><li><strong>Crew objective: </strong>use the clues to identify the player with the different word.</li><li><strong>Impostor objective: </strong>blend in and redirect suspicion—even if they do not yet realize they are the impostor.</li><li><strong>Information: </strong>every player sees a private word and a shared category; nobody sees a role label in Near Match mode.</li></ul></div></details>
+<ol class="steps"><li><span class="step-number" aria-hidden="true">1</span><div><h3>Peek <span class="badge status-planned">planned</span></h3><p>Privately reveal your word, then confirm that you are ready. Keep the screen and word to yourself.</p><div class="step-meta"><div class="fact"><span class="fact-label">Default</span><span class="fact-value">No timer</span></div></div></div></li><li><span class="step-number" aria-hidden="true">2</span><div><h3>Clue <span class="badge status-planned">planned</span></h3><p>Everyone simultaneously writes one clue, 2–36 characters. Submissions stay hidden until all active players lock in or 60 seconds expire.</p><div class="step-meta"><div class="fact"><span class="fact-label">Advantage</span><span class="fact-value">No copying later clues</span></div></div></div></li><li><span class="step-number" aria-hidden="true">3</span><div><h3>Reveal <span class="badge status-planned">planned</span></h3><p>All clues appear at once with player names in a server-randomized order. Read them before anyone argues their case.</p><div class="step-meta"><div class="fact"><span class="fact-label">Duration</span><span class="fact-value">10-second beat</span></div></div></div></li><li><span class="step-number" aria-hidden="true">4</span><div><h3>Interrogate <span class="badge status-planned">planned</span></h3><p>The room gets 90 seconds to question clues and defend choices. Words remain secret; players may discuss clues, not display their screens.</p><div class="step-meta"><div class="fact"><span class="fact-label">Host</span><span class="fact-value">+30 sec / end early</span></div></div></div></li><li><span class="step-number" aria-hidden="true">5</span><div><h3>Vote <span class="badge status-planned">planned</span></h3><p>Each player secretly chooses one other player. Votes lock individually and totals remain hidden until everyone votes or 45 seconds expire.</p><div class="step-meta"><div class="fact"><span class="fact-label">Rule</span><span class="fact-value">No self-vote</span></div></div></div></li><li><span class="step-number" aria-hidden="true">6</span><div><h3>Runoff <span class="badge status-planned">planned</span></h3><p>If the highest vote is tied, only tied suspects remain eligible for one 20-second revote. A second tie means the impostor escapes.</p><div class="step-meta"><div class="fact"><span class="fact-label">Frequency</span><span class="fact-value">Only when needed</span></div></div></div></li><li><span class="step-number" aria-hidden="true">7</span><div><h3>Unmask <span class="badge status-planned">planned</span></h3><p>Reveal the accused player, both words, every role, the ballot map, and score deltas. The host can replay or return to the shelf.</p><div class="step-meta"><div class="fact"><span class="fact-label">Payoff</span><span class="fact-value">Staged reveal</span></div></div></div></li></ol>
+<details open><summary>What makes a legal clue?</summary><div class="details-body"><ul><li>Use one short word or phrase that connects to your secret without making it obvious.</li><li>Do not use the secret itself, a translation, a spelling fragment, initials, letter counts, rhymes, or “sounds like” tricks.</li><li>Do not show your screen, search the web, use gestures to spell, or coordinate a private code.</li><li>Repeated clues are allowed but suspicious. The server rejects an exact normalized match to the player’s own word; the social group enforces intent.</li><li>Blank or timed-out clues appear as “No clue,” which remains voteable evidence.</li></ul>
+<aside class="callout callout-info"><strong class="callout-title">Rule-copy version</strong><p>Give a clue that proves you know the word without giving the word away. One player has a different word. Find the clue that does not quite fit.</p></aside></div></details>
+</section>
+<section class="section" id="section-4" aria-labelledby="section-4-title">
+  <h2 id="section-4-title">Outcomes, scoring, and balance</h2>
+  <div class="table-wrap"><table><caption>Win resolution</caption><thead><tr><th class="align-left" scope="col">Situation</th><th class="align-left" scope="col">Round winner</th><th class="align-left" scope="col">Why</th></tr></thead><tbody><tr><td class="align-left">Top-voted player is the impostor</td><td class="align-left"><strong>Crew</strong></td><td class="align-left">The room found the mismatch.</td></tr><tr><td class="align-left">Top-voted player is crew</td><td class="align-left"><strong>Impostor</strong></td><td class="align-left">Misdirection worked.</td></tr><tr><td class="align-left">Runoff ties again</td><td class="align-left"><strong>Impostor</strong></td><td class="align-left">The crew failed to reach a verdict.</td></tr><tr><td class="align-left">Vote timer ends</td><td class="align-left">Count locked ballots only</td><td class="align-left">Missing votes earn nothing and cannot stall the room.</td></tr></tbody></table></div>
+<div class="table-wrap"><table><caption>Score deltas, calibrated to Farebi’s existing room totals</caption><thead><tr><th class="align-left" scope="col">Player action</th><th class="align-right" scope="col">Points</th><th class="align-left" scope="col">Notes</th></tr></thead><tbody><tr><td class="align-left">Crew votes for the impostor</td><td class="align-right"><strong>+10</strong></td><td class="align-left">Individual accuracy; awarded even if the group convicts someone else.</td></tr><tr><td class="align-left">Impostor fools a crew ballot</td><td class="align-right"><strong>+10</strong></td><td class="align-left">One award for each crew vote not cast for the impostor, including no-votes.</td></tr><tr><td class="align-left">Vote for yourself / duplicate vote</td><td class="align-right">Not allowed</td><td class="align-left">Rejected server-side.</td></tr><tr><td class="align-left">Team win bonus</td><td class="align-right">None in V1</td><td class="align-left">Keeps scores explainable and prevents runaway totals.</td></tr></tbody></table></div>
+<div class="table-wrap"><table><caption>Recommended defaults</caption><thead><tr><th class="align-left" scope="col">Setting</th><th class="align-left" scope="col">Default</th><th class="align-left" scope="col">Allowed</th></tr></thead><tbody><tr><td class="align-left">Players</td><td class="align-left">4+</td><td class="align-left">4–20; explain that 5–10 plays best</td></tr><tr><td class="align-left">Impostors</td><td class="align-left">1</td><td class="align-left">Fixed in V1; two-impostor mode is a later experiment</td></tr><tr><td class="align-left">Pack</td><td class="align-left">Mixed</td><td class="align-left">Mixed, India, Food, Places, Entertainment, Everyday</td></tr><tr><td class="align-left">Clue time</td><td class="align-left">60 sec</td><td class="align-left">30–180 sec</td></tr><tr><td class="align-left">Discussion</td><td class="align-left">90 sec</td><td class="align-left">30–300 sec</td></tr><tr><td class="align-left">Vote</td><td class="align-left">45 sec</td><td class="align-left">30–120 sec</td></tr></tbody></table></div>
+</section>
+<section class="section" id="section-5" aria-labelledby="section-5-title">
+  <h2 id="section-5-title">Experience and art direction</h2>
+  <ul><li><strong>Shelf card: </strong>Add game 03 in src/routes/index.tsx with the line “Everyone gets a word. Someone got the wrong one.” Use electric violet (#B98CFF) as the contained accent against the current near-black/lime/coral system; keep the no-gradient rule.</li><li><strong>Private reveal: </strong>A hold-to-reveal word card that snaps covered again on release. Category stays visible; the word uses oversized Farebi display type.</li><li><strong>Clue wall: </strong>Named clue tiles land together after a short countdown. Random visual rotation can add party energy, but DOM order and focus order must stay stable.</li><li><strong>Voting: </strong>Reuse recognizable player rows, but make suspect selection unmistakable and never expose live vote totals.</li><li><strong>Reveal: </strong>Stage it in three beats: accused player, role, then the word pair and ballot map. Respect reduced-motion and provide an immediate Skip reveal control.</li><li><strong>Mobile: </strong>Keep the primary action thumb-reachable, cover private content when the tab loses visibility where practical, and never rely on hover or color alone.</li></ul>
+<aside class="callout callout-warning"><strong class="callout-title">Visual-system fact versus older documentation</strong><p>PROJECT.md describes monochrome/no-color UI, while the current routes already use lime, coral, cyan, and yellow game accents. Follow the implementation that users see: permanent dark foundations, one restrained accent per game, no gradients inside the game UI, and high-contrast shadcn controls.</p></aside>
+</section>
+<section class="section" id="section-6" aria-labelledby="section-6-title">
+  <h2 id="section-6-title">State machine and backend contract</h2>
+  <div class="table-wrap"><table><caption>Round states added to convex/schema.ts</caption><thead><tr><th class="align-left" scope="col">State</th><th class="align-left" scope="col">Visible to everyone</th><th class="align-left" scope="col">Transition</th></tr></thead><tbody><tr><td class="align-left"><code>waiting</code></td><td class="align-left">Game choice, pack, timers, players</td><td class="align-left">Host starts with 4+ active players</td></tr><tr><td class="align-left"><code>impostor_clue</code></td><td class="align-left">Category, readiness/submission progress, own private brief only</td><td class="align-left">All clues lock, deadline, or host ends early</td></tr><tr><td class="align-left"><code>impostor_discussion</code></td><td class="align-left">All named clues; no roles, prompts, or votes</td><td class="align-left">Deadline or host ends early</td></tr><tr><td class="align-left"><code>impostor_voting</code></td><td class="align-left">Eligible players and own vote status only</td><td class="align-left">All vote or deadline; compute winner or runoff</td></tr><tr><td class="align-left"><code>impostor_runoff</code></td><td class="align-left">Tied candidates and own vote status</td><td class="align-left">All vote or 20-second deadline</td></tr><tr><td class="align-left"><code>results</code></td><td class="align-left">Roles, both words, ballot map, scores</td><td class="align-left">Replay branch or return to lobby</td></tr></tbody></table></div>
+<aside class="callout callout-info"><strong class="callout-title">Privacy contract</strong><p>The prompt catalogue and selected pair remain server-side. getRoom returns a personalized privateBrief only for the current player during clue entry. Near Match must not return role labels before results. Never serialize the crew word, decoy word, role list, aggregate votes, or another player’s private brief into a pre-result client payload.</p></aside>
+<details open><summary>Proposed data changes</summary><div class="details-body"><div class="table-wrap"><table><caption>Schema additions</caption><thead><tr><th class="align-left" scope="col">Entity</th><th class="align-left" scope="col">Fields</th><th class="align-left" scope="col">Reason</th></tr></thead><tbody><tr><td class="align-left">rooms</td><td class="align-left"><code>impostorMode, impostorPack, impostorPromptId, impostorClueDurationSeconds, impostorDiscussionDurationSeconds, impostorVoteDurationSeconds, impostorRunoffCandidateIds, roundNumber</code></td><td class="align-left">Authoritative configuration, timers, prompt selection, tie state, and replay-safe vote identity.</td></tr><tr><td class="align-left">players</td><td class="align-left"><code>impostorRole, impostorClue, impostorClueOrder</code></td><td class="align-left">Keep impostor data separate from Truth or Lie’s role and statement fields.</td></tr><tr><td class="align-left">impostorVotes</td><td class="align-left"><code>roomId, roundNumber, stage, voterId, targetPlayerId, createdAt</code></td><td class="align-left">Supports first ballot plus runoff without weakening the existing votes uniqueness contract.</td></tr></tbody></table></div>
+<p><strong>Prompt model: </strong><code>{ id, category, crewWord, impostorWord, aliases, pack, difficulty, locale }</code>. Store curated prompts in server-only <code>convex/data/impostor-prompts.ts</code>; do not import that module into frontend code.</p></div></details>
+<details><summary>Mutations and pure game logic</summary><div class="details-body"><ul><li><code>startGame</code>: accept impostor as a gameType, validate four players, choose a recent-safe pair, assign exactly one role server-side, randomize clue order, and enter impostor_clue.</li><li><code>submitImpostorClue</code>: normalize whitespace, enforce 2–36 characters, reject the player’s exact word/aliases, write once, and atomically advance when the final clue lands.</li><li><code>submitImpostorVote</code>: validate active player, stage, eligible target, no self-vote, and one ballot per player per stage.</li><li><code>advancePhase</code>: extend timeout handling for clue, discussion, vote, and runoff; every transition re-checks state so competing clients are idempotent.</li><li><code>restartRound</code>: clear round-specific prompt, clues, roles, and ballots while preserving scores and host settings; avoid the last five prompt IDs when the catalogue permits.</li><li><code>convex/lib/impostor-game.ts</code>: own deterministic role assignment, prompt choice, clue normalization, tally/runoff resolution, and score calculation as pure tested functions.</li></ul></div></details>
+</section>
+<section class="section" id="section-7" aria-labelledby="section-7-title">
+  <h2 id="section-7-title">Implementation plan</h2>
+  <ol class="steps"><li><span class="step-number" aria-hidden="true">1</span><div><h3>1. Lock the rule engine <span class="badge status-planned">planned</span></h3><p>Add prompt types and a small high-quality seed pack; implement pure assignment, clue validation, vote tally, runoff, and scoring helpers with deterministic tests.</p><div class="step-meta"><div class="fact"><span class="fact-label">Files</span><span class="fact-value">convex/lib/impostor-game.ts; convex/data/impostor-prompts.ts; tests/impostor-game.test.ts</span></div><div class="fact"><span class="fact-label">Exit</span><span class="fact-value">Every outcome and tie is deterministic</span></div></div></div></li><li><span class="step-number" aria-hidden="true">2</span><div><h3>2. Extend persistence safely <span class="badge status-planned">planned</span></h3><p>Add impostor gameType/status literals, isolated player fields, room settings, round number, and impostorVotes indexes. Regenerate Convex types.</p><div class="step-meta"><div class="fact"><span class="fact-label">Files</span><span class="fact-value">convex/schema.ts; convex/_generated/*</span></div><div class="fact"><span class="fact-label">Exit</span><span class="fact-value">Existing documents remain valid via optional fields</span></div></div></div></li><li><span class="step-number" aria-hidden="true">3</span><div><h3>3. Build server-authoritative phases <span class="badge status-planned">planned</span></h3><p>Branch start/restart/lobby logic, add clue and ballot mutations, advance deadlines idempotently, and shape getRoom so secrets are personalized and phase-gated.</p><div class="step-meta"><div class="fact"><span class="fact-label">Files</span><span class="fact-value">convex/rooms.ts</span></div><div class="fact"><span class="fact-label">Exit</span><span class="fact-value">Two clients racing cannot double-score or skip states</span></div></div></div></li><li><span class="step-number" aria-hidden="true">4</span><div><h3>4. Add the shelf and room setup <span class="badge status-planned">planned</span></h3><p>Add Same Same as game 03, thread impostor through GameType unions, require four players at start, and expose pack plus timer controls without showing irrelevant Truth or Lie settings.</p><div class="step-meta"><div class="fact"><span class="fact-label">Files</span><span class="fact-value">src/routes/index.tsx; src/routes/room.$code.tsx</span></div><div class="fact"><span class="fact-label">Exit</span><span class="fact-value">Create, join, choose, and start work on mobile and desktop</span></div></div></div></li><li><span class="step-number" aria-hidden="true">5</span><div><h3>5. Build the five round surfaces <span class="badge status-planned">planned</span></h3><p>Create private reveal/clue entry, synchronized clue wall, discussion timer, blind vote/runoff, and staged results. Extend host controls and next-round waiting behavior.</p><div class="step-meta"><div class="fact"><span class="fact-label">Files</span><span class="fact-value">src/routes/room.$code.tsx; src/styles.css</span></div><div class="fact"><span class="fact-label">Exit</span><span class="fact-value">A full round needs no manual refresh</span></div></div></div></li><li><span class="step-number" aria-hidden="true">6</span><div><h3>6. Tune content and accessibility <span class="badge status-planned">planned</span></h3><p>Grow to at least 120 reviewed pairs across six packs, label difficulty, keyboard-test every action, verify screen-reader secret handling, reduced motion, contrast, and small screens.</p><div class="step-meta"><div class="fact"><span class="fact-label">Exit</span><span class="fact-value">No pair repeats within five rounds when alternatives exist</span></div></div></div></li><li><span class="step-number" aria-hidden="true">7</span><div><h3>7. Release behind a content flag <span class="badge status-planned">planned</span></h3><p>Enable for internal rooms first, capture only aggregate round outcomes and timeout rates, fix prompt outliers, then add the public shelf card.</p><div class="step-meta"><div class="fact"><span class="fact-label">Rollout</span><span class="fact-value">Internal → small cohort → all rooms</span></div></div></div></li></ol>
+</section>
+<section class="section" id="section-8" aria-labelledby="section-8-title">
+  <h2 id="section-8-title">Edge cases and guardrails</h2>
+  <div class="table-wrap"><table><caption>Risks that need explicit behavior</caption><thead><tr><th class="align-left" scope="col">Case</th><th class="align-center" scope="col">Severity</th><th class="align-left" scope="col">Rule / mitigation</th></tr></thead><tbody><tr><td class="align-left">Secret leakage through getRoom</td><td class="align-center"><span class="badge severity-critical">critical</span></td><td class="align-left">Test response shapes per player and per phase; return only privateBrief to the authenticated player.</td></tr><tr><td class="align-left">Last clue submission races timer</td><td class="align-center"><span class="badge severity-high">high</span></td><td class="align-left">Mutation re-reads status/deadline and transitions once; timeout fills missing clues with a neutral placeholder.</td></tr><tr><td class="align-left">Player disconnects</td><td class="align-center"><span class="badge severity-medium">medium</span></td><td class="align-left">Deadlines guarantee progress; their clue may become No clue and their missing ballot counts as fooled for impostor scoring.</td></tr><tr><td class="align-left">Player joins mid-round</td><td class="align-center"><span class="badge severity-medium">medium</span></td><td class="align-left">Keep the existing joinedForNextRound spectator behavior and never send current secrets.</td></tr><tr><td class="align-left">Host leaves</td><td class="align-center"><span class="badge severity-high">high</span></td><td class="align-left">Existing platform has no visible host-transfer path. Treat this as a cross-game dependency; timers still progress when another client calls advancePhase.</td></tr><tr><td class="align-left">Bad or offensive clue</td><td class="align-center"><span class="badge severity-medium">medium</span></td><td class="align-left">V1 relies on private-room social moderation; add host hide/remove only if playtests show need. Curated prompts must remain family-safe.</td></tr><tr><td class="align-left">Ambiguous prompt pair</td><td class="align-center"><span class="badge severity-high">high</span></td><td class="align-left">Give every pair a stable ID and log aggregate conviction rate; retire pairs far outside the target balance band.</td></tr></tbody></table></div>
+<aside class="callout callout-warning"><strong class="callout-title">Target balance band</strong><p>Across enough plays, crew conviction should land around 45–65%. Above that, the pair is too obvious; below it, the pair is too similar or culturally unclear. This is a tuning heuristic, not a launch blocker before real play data exists.</p></aside>
+</section>
+<section class="section" id="section-9" aria-labelledby="section-9-title">
+  <h2 id="section-9-title">Verification and acceptance</h2>
+  <details open><summary>Automated checks</summary><div class="details-body"><ul><li>Role assignment produces exactly one impostor for every allowed player count and never runs client-side.</li><li>Prompt selection returns a valid pair, honors pack/difficulty, and avoids recent IDs when possible.</li><li>Clue normalization rejects whitespace-only, own word/alias, oversized, and repeat submission cases without leaking the other word.</li><li>Vote logic rejects self, duplicate, stale-stage, spectator, and invalid-target ballots.</li><li>Unique winner, wrong conviction, first tie, second tie, partial timeout, and score deltas all have unit coverage.</li><li>Existing Truth or Lie and Who’s That? tests remain unchanged and green.</li></ul>
+<figure class="code-block"><div class="code-toolbar"><span class="code-label">sh</span><button class="copy-code" type="button" data-copy-code>Copy</button></div><pre><code><span class="code-line"><span class="line-number" aria-hidden="true">1</span><span class="code-text">pnpm typecheck</span></span>
+<span class="code-line"><span class="line-number" aria-hidden="true">2</span><span class="code-text">pnpm lint</span></span>
+<span class="code-line"><span class="line-number" aria-hidden="true">3</span><span class="code-text">pnpm test</span></span>
+<span class="code-line"><span class="line-number" aria-hidden="true">4</span><span class="code-text">pnpm build</span></span></code></pre><figcaption>Required repository checks</figcaption></figure></div></details>
+<details open><summary>Manual multiplayer matrix</summary><div class="details-body"><ul><li>Four players complete a normal round; only each player’s own word is visible before results.</li><li>A tied first vote enters runoff with exactly the tied candidates; a second tie ends once.</li><li>One player disconnects during clue entry and another during voting; both phases still finish on deadline.</li><li>A late joiner waits without receiving either word, then becomes active after replay.</li><li>Refresh during every state restores the correct private/public surface and never resubmits an action.</li><li>Host adds 30 seconds and ends clue/discussion/voting early; non-host calls are rejected.</li><li>Replay preserves cumulative scores, rotates role/prompt, clears old ballots, and does not repeat a recent pair.</li></ul></div></details>
+<aside class="callout callout-success"><strong class="callout-title">Definition of done</strong><p>A 4–20 player room can choose Same Same, complete a secret and realtime round without refresh, resolve ties deterministically, see an explainable reveal and score, replay safely, and switch back to another game—with no pre-result secret or vote leakage.</p></aside>
+</section>
+<section class="section" id="section-10" aria-labelledby="section-10-title">
+  <h2 id="section-10-title">Chaos shelf — follow-on variants</h2>
+  <ul><li><strong>Blank Slate: </strong>the impostor sees only the category, knows their role, and gets one exact-word steal attempt if convicted.</li><li><strong>Double Trouble: </strong>two impostors share the decoy for groups of 8+, but do not know each other. One conviction decides the round.</li><li><strong>Silent Mode: </strong>no discussion at all—read the clue wall and vote. Designed for 90-second rounds.</li><li><strong>Hot Seat: </strong>after clues reveal, each player gets one yes/no question from the room before voting.</li><li><strong>Chain Reaction: </strong>three linked words circulate across the room; players must discover both the odd player and which neighboring word they received.</li><li><strong>Secret Scene: </strong>replace single words with prompts such as “worst place for a first date” versus “worst place for a job interview,” then reveal anonymous answers before names.</li></ul>
+<aside class="callout callout-info"><strong class="callout-title">Expansion rule</strong><p>Do not ship a variant because it is easy to toggle. Add it only when it creates a visibly different social decision and can still be explained in one sentence.</p></aside>
+</section></main>
+  </div>
+  <nav class="toc" aria-label="Plan sections" tabindex="0"><span class="toc-dots" aria-hidden="true">•••</span><div class="toc-panel"><strong class="toc-title">On this page</strong><a class="toc-depth-0" href="#section-1">Product call</a><a class="toc-depth-0" href="#section-2">Three playable concepts</a><a class="toc-depth-0" href="#section-3">Player-facing rulebook</a><a class="toc-depth-0" href="#section-4">Outcomes, scoring, and balance</a><a class="toc-depth-0" href="#section-5">Experience and art direction</a><a class="toc-depth-0" href="#section-6">State machine and backend contract</a><a class="toc-depth-0" href="#section-7">Implementation plan</a><a class="toc-depth-0" href="#section-8">Edge cases and guardrails</a><a class="toc-depth-0" href="#section-9">Verification and acceptance</a><a class="toc-depth-0" href="#section-10">Chaos shelf — follow-on variants</a></div></nav>
+  <script>
+(() => {
+  const modeToggle = document.querySelector("[data-mode-toggle]");
+  const devicePreference = window.matchMedia("(prefers-color-scheme: dark)");
+  let followsDevice = true;
+  try {
+    const saved = localStorage.getItem("heple-mode");
+    followsDevice = saved !== "light" && saved !== "dark";
+  } catch {}
+
+  function updateModeControl() {
+    if (!(modeToggle instanceof HTMLButtonElement)) return;
+    const dark = document.documentElement.dataset.mode === "dark";
+    const next = dark ? "light" : "dark";
+    modeToggle.setAttribute("aria-label", "Switch to " + next + " mode");
+    modeToggle.title = "Switch to " + next + " mode";
+  }
+
+  modeToggle?.addEventListener("click", () => {
+    const next = document.documentElement.dataset.mode === "dark" ? "light" : "dark";
+    document.documentElement.dataset.mode = next;
+    followsDevice = false;
+    try { localStorage.setItem("heple-mode", next); } catch {}
+    updateModeControl();
+  });
+  devicePreference.addEventListener("change", (event) => {
+    if (!followsDevice) return;
+    document.documentElement.dataset.mode = event.matches ? "dark" : "light";
+    updateModeControl();
+  });
+  updateModeControl();
+
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.append(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("Copy failed");
+  }
+
+  document.addEventListener("click", async (event) => {
+    const target = event.target instanceof Element
+      ? event.target.closest("[data-copy-code]")
+      : null;
+    if (!(target instanceof HTMLButtonElement)) return;
+
+    const figure = target.closest(".code-block");
+    if (!figure) return;
+    const code = Array.from(figure.querySelectorAll(".code-text"))
+      .map((line) => line.textContent || "")
+      .join("\n");
+
+    try {
+      await copyText(code);
+      target.textContent = "Copied";
+    } catch {
+      target.textContent = "Copy failed";
+    }
+    window.setTimeout(() => { target.textContent = "Copy"; }, 1600);
+  });
+})();
+</script>
+</body>
+</html>

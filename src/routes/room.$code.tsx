@@ -29,6 +29,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { api } from '../../convex/_generated/api'
 import type { Id } from '../../convex/_generated/dataModel'
 import { AuthOptions } from '@/components/auth-options'
+import { Brand } from '@/components/brand'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -103,11 +104,7 @@ function RoomPage() {
   const auth = useFarebiAuth()
 
   if (auth.isLoading) {
-    return (
-      <div className="grid min-h-screen place-items-center">
-        <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-      </div>
-    )
+    return <RoomLoading label="Finding your player…" />
   }
 
   if (!auth.isAuthenticated) {
@@ -136,11 +133,7 @@ function ConvexRoomGate({ code }: { code: string }) {
   const convexAuth = useConvexAuth()
 
   if (convexAuth.isLoading) {
-    return (
-      <div className="grid min-h-screen place-items-center">
-        <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-      </div>
-    )
+    return <RoomLoading label="Opening the room…" />
   }
 
   if (!convexAuth.isAuthenticated) {
@@ -219,11 +212,7 @@ function ConnectedRoom({ code }: { code: string }) {
   }
 
   if (!hasJoined || room === undefined) {
-    return (
-      <div className="grid min-h-screen place-items-center">
-        <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-      </div>
-    )
+    return <RoomLoading label="Pulling up a chair…" />
   }
 
   if (room === null) {
@@ -243,9 +232,10 @@ function ConnectedRoom({ code }: { code: string }) {
     room.status !== 'finished'
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="relative min-h-screen overflow-hidden bg-[#10130c]">
+      <PartyBackdrop />
       <RoomHeader room={room} onExpire={() => void advance()} />
-      <main className="mx-auto max-w-5xl px-6 py-10 sm:py-16">
+      <main className="relative mx-auto max-w-5xl px-5 py-10 sm:px-6 sm:py-16">
         {waitingForNextRound ? (
           <WaitingForNextRound />
         ) : (
@@ -277,14 +267,9 @@ function RoomHeader({
   onExpire: () => void
 }) {
   return (
-    <header className="border-b border-border">
+    <header className="relative z-20 border-b border-white/10 bg-[#10130c]/80 backdrop-blur-xl">
       <div className="mx-auto grid min-h-16 max-w-5xl grid-cols-[1fr_auto] items-center gap-3 px-6 py-3 sm:grid-cols-[1fr_auto_1fr]">
-        <Link to="/" className="flex items-center gap-2.5">
-          <div className="grid size-7 place-items-center rounded-md bg-foreground text-xs font-black text-background">
-            F
-          </div>
-          <span className="font-semibold tracking-tight">Farebi</span>
-        </Link>
+        <Brand compact />
         {room.status !== 'waiting' ? (
           <Button
             variant="ghost"
@@ -300,7 +285,10 @@ function RoomHeader({
           <span className="hidden sm:block" />
         )}
         <div className="flex items-center justify-self-end gap-2">
-          <Badge variant="outline" className="capitalize">
+          <Badge
+            variant="outline"
+            className="border-[#d9ff43]/25 bg-[#d9ff43]/8 font-mono uppercase tracking-[0.1em] text-[#d9ff43]"
+          >
             {roomStatusLabel(room.status)}
           </Badge>
           {room.phaseEndsAt ? (
@@ -577,7 +565,7 @@ function Timer({ endsAt, onExpire }: { endsAt: number; onExpire: () => void }) {
   const minutes = Math.floor(seconds / 60)
   const remainder = String(seconds % 60).padStart(2, '0')
   return (
-    <span className="flex items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs text-muted-foreground">
+    <span className="flex items-center gap-1.5 rounded-full bg-white/[0.05] px-2.5 py-1 font-mono text-xs text-white/70">
       <Clock3 className="size-3.5" /> {minutes}:{remainder}
     </span>
   )
@@ -640,13 +628,16 @@ function Lobby({ room }: { room: RoomState }) {
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
       <section>
-        <Badge variant="outline" className="mb-5">
-          Lobby
+        <Badge
+          variant="outline"
+          className="mb-5 border-[#d9ff43]/30 bg-[#d9ff43]/10 font-mono uppercase tracking-[0.16em] text-[#d9ff43]"
+        >
+          Room lobby
         </Badge>
-        <h1 className="text-4xl font-semibold tracking-tight">
-          Waiting for players
+        <h1 className="farebi-display max-w-xl text-5xl font-black leading-[0.92] tracking-[-0.05em] sm:text-6xl">
+          Waiting for the chaos.
         </h1>
-        <p className="mt-3 text-muted-foreground">
+        <p className="mt-5 max-w-lg leading-7 text-muted-foreground">
           Share the QR code or room link. The game needs at least three players.
         </p>
         <div className="mt-8 grid gap-3 sm:grid-cols-2">
@@ -654,16 +645,16 @@ function Lobby({ room }: { room: RoomState }) {
             <PlayerRow key={player.id} player={player} />
           ))}
           {room.players.length < room.maxPlayers ? (
-            <div className="flex h-16 items-center rounded-lg border border-dashed border-border px-4 text-sm text-muted-foreground">
+            <div className="flex h-16 items-center rounded-2xl border border-dashed border-[#d9ff43]/25 bg-[#d9ff43]/[0.025] px-4 text-sm text-muted-foreground">
               {room.maxPlayers - room.players.length} open{' '}
               {room.maxPlayers - room.players.length === 1 ? 'seat' : 'seats'}
             </div>
           ) : null}
         </div>
       </section>
-      <Card className="h-fit">
+      <Card className="h-fit border-[#ff765f]/25 bg-[#211a19]/90">
         <CardHeader>
-          <CardTitle className="flex items-center justify-center gap-2 text-center">
+          <CardTitle className="farebi-display flex items-center justify-center gap-2 text-center text-xl font-black">
             {room.isHost ? (
               <>
                 <QrCode className="size-4" /> Scan QR code
@@ -684,7 +675,7 @@ function Lobby({ room }: { room: RoomState }) {
         <CardContent className="grid gap-4">
           {room.isHost ? (
             <>
-              <div className="mx-auto w-full max-w-56 rounded-xl bg-white p-3">
+              <div className="mx-auto w-full max-w-56 rotate-[-1deg] rounded-2xl bg-white p-3 shadow-[6px_6px_0_#ff765f]">
                 <QRCodeSVG
                   value={getRoomLink(room.code)}
                   title={`Join room ${room.code}`}
@@ -701,7 +692,7 @@ function Lobby({ room }: { room: RoomState }) {
               >
                 <Link2 /> Copy link
               </Button>
-              <p className="text-center font-mono text-sm tracking-[0.2em] text-muted-foreground">
+              <p className="text-center font-mono text-sm font-black tracking-[0.24em] text-[#ff9b8a]">
                 {room.code}
               </p>
               <StartGameSetup
@@ -883,20 +874,20 @@ function RoundSetupForm({
       ) : null}
       {selectedGame === 'truth_or_lie' ? (
         <>
-          <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card">
-            <div className="border-r border-border p-4">
-              <p className="font-mono text-2xl font-semibold">
+          <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-[#d9ff43]/20 bg-[#10130c]">
+            <div className="border-r border-[#d9ff43]/15 bg-[#d9ff43] p-4 text-[#10130c]">
+              <p className="farebi-display text-3xl font-black">
                 {settings.liarCount}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 font-mono text-[10px] font-black uppercase tracking-[0.15em] opacity-60">
                 {settings.liarCount === 1 ? 'Liar' : 'Liars'}
               </p>
             </div>
             <div className="p-4">
-              <p className="font-mono text-2xl font-semibold">
+              <p className="farebi-display text-3xl font-black">
                 {playerCount - settings.liarCount}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 font-mono text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground">
                 Truth players
               </p>
             </div>
@@ -936,7 +927,7 @@ function RoundSetupForm({
           />
         </>
       ) : selectedGame === 'celebrity' ? (
-        <div className="rounded-lg border border-border bg-card p-4 text-sm leading-6 text-muted-foreground">
+        <div className="rounded-2xl border border-[#64d8ff]/25 bg-[#64d8ff]/[0.07] p-4 text-sm leading-6 text-white/70">
           Everyone privately picks one well-known person. Turns run
           alphabetically; the guesser looks away while the rest of the room sees
           the name and photo.
@@ -971,10 +962,10 @@ function GameChoice({
       type="button"
       aria-pressed={selected}
       className={cn(
-        'rounded-xl border p-4 text-left transition-colors',
+        'rounded-2xl border p-4 text-left transition-[color,background-color,border-color,transform] hover:-translate-y-0.5',
         selected
-          ? 'border-foreground bg-foreground text-background'
-          : 'border-border bg-card hover:border-white/30',
+          ? 'border-[#d9ff43] bg-[#d9ff43] text-[#10130c] shadow-[4px_4px_0_#ff765f]'
+          : 'border-border bg-white/[0.025] hover:border-[#d9ff43]/35',
       )}
       onClick={onClick}
     >
@@ -984,7 +975,7 @@ function GameChoice({
       <span
         className={cn(
           'mt-2 block text-xs leading-5',
-          selected ? 'text-background/65' : 'text-muted-foreground',
+          selected ? 'text-[#10130c]/65' : 'text-muted-foreground',
         )}
       >
         {description}
@@ -1014,10 +1005,18 @@ function Writing({ room }: { room: RoomState }) {
   return (
     <div className="mx-auto grid max-w-2xl gap-8">
       <div className="text-center">
-        <Badge variant="outline" className="mb-5">
+        <Badge
+          variant="outline"
+          className="mb-5 border-[#ff765f]/35 bg-[#ff765f]/10 font-mono uppercase tracking-[0.15em] text-[#ff9b8a]"
+        >
           Your role
         </Badge>
-        <h1 className="text-5xl font-semibold capitalize tracking-tight">
+        <h1
+          className={cn(
+            'farebi-display text-6xl font-black capitalize tracking-[-0.055em] sm:text-7xl',
+            current?.role === 'lie' ? 'text-[#ff765f]' : 'text-[#d9ff43]',
+          )}
+        >
           {current?.role}
         </h1>
         <p className="mt-3 text-muted-foreground">
@@ -1026,16 +1025,18 @@ function Writing({ room }: { room: RoomState }) {
             : 'Invent something about yourself. Make them believe it.'}
         </p>
       </div>
-      <Card>
+      <Card className="border-white/12 bg-[#171a14]/95">
         <CardHeader>
-          <CardTitle>Write your statement</CardTitle>
+          <CardTitle className="farebi-display text-2xl font-black">
+            Write your statement
+          </CardTitle>
           <CardDescription>
             No prompts. Keep it under 240 characters.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {current?.hasSubmitted ? (
-            <div className="flex items-center gap-3 rounded-md border border-border bg-background p-4 text-sm">
+            <div className="flex items-center gap-3 rounded-2xl border border-[#d9ff43]/25 bg-[#d9ff43]/10 p-4 text-sm text-[#d9ff43]">
               <Check className="size-4" /> Submitted. Waiting for the others.
             </div>
           ) : (
@@ -1171,17 +1172,20 @@ function CelebritySubmission({ room }: { room: RoomState }) {
   if (current?.hasSubmitted) {
     return (
       <section className="mx-auto max-w-xl text-center">
-        <Badge variant="outline" className="mb-5">
+        <Badge
+          variant="outline"
+          className="mb-5 border-[#d9ff43]/30 bg-[#d9ff43]/10 font-mono uppercase tracking-[0.15em] text-[#d9ff43]"
+        >
           Locked in
         </Badge>
         {current.celebrityImageUrl ? (
           <img
             src={current.celebrityImageUrl}
             alt=""
-            className="mx-auto mb-6 aspect-[4/5] w-48 rounded-2xl border border-border object-cover grayscale"
+            className="mx-auto mb-7 aspect-[4/5] w-48 rotate-[-2deg] rounded-3xl border border-[#d9ff43]/30 object-cover shadow-[8px_8px_0_#ff765f]"
           />
         ) : null}
-        <h1 className="text-4xl font-semibold tracking-tight">
+        <h1 className="farebi-display text-5xl font-black tracking-[-0.05em]">
           {current.celebrityName}
         </h1>
         <p className="mt-3 text-muted-foreground">
@@ -1194,10 +1198,13 @@ function CelebritySubmission({ room }: { room: RoomState }) {
   return (
     <section className="mx-auto max-w-3xl">
       <div className="text-center">
-        <Badge variant="outline" className="mb-5">
+        <Badge
+          variant="outline"
+          className="mb-5 border-[#64d8ff]/30 bg-[#64d8ff]/10 font-mono uppercase tracking-[0.15em] text-[#64d8ff]"
+        >
           Your secret pick
         </Badge>
-        <h1 className="text-4xl font-semibold tracking-tight">
+        <h1 className="farebi-display text-5xl font-black leading-[0.95] tracking-[-0.05em]">
           Pick someone everyone knows
         </h1>
         <p className="mt-3 text-muted-foreground">
@@ -1207,7 +1214,7 @@ function CelebritySubmission({ room }: { room: RoomState }) {
       </div>
 
       <div className="mt-10 grid gap-6 md:grid-cols-[1fr_280px]">
-        <Card>
+        <Card className="border-[#64d8ff]/20 bg-[#111b1c]/90">
           <CardContent className="grid gap-4 pt-1">
             <label className="relative block">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -1224,10 +1231,10 @@ function CelebritySubmission({ room }: { room: RoomState }) {
                   key={celebrity.name}
                   type="button"
                   className={cn(
-                    'flex items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors',
+                    'flex items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors',
                     name === celebrity.name
-                      ? 'border-foreground bg-foreground text-background'
-                      : 'border-border bg-background hover:border-white/30',
+                      ? 'border-[#64d8ff] bg-[#64d8ff] text-[#10130c]'
+                      : 'border-border bg-black/10 hover:border-[#64d8ff]/40',
                   )}
                   onClick={() => void chooseCelebrity(celebrity)}
                 >
@@ -1274,7 +1281,7 @@ function CelebritySubmission({ room }: { room: RoomState }) {
               <img
                 src={previewUrl ?? photoUrl}
                 alt="Selected celebrity"
-                className="aspect-[4/3] w-full object-cover grayscale"
+                className="aspect-[4/3] w-full object-cover"
               />
             </div>
           ) : resolvingPhoto ? (
@@ -1282,7 +1289,7 @@ function CelebritySubmission({ room }: { room: RoomState }) {
               <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : null}
-          <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent">
+          <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-white/[0.025] text-sm font-bold hover:border-[#64d8ff]/35 hover:bg-accent">
             <ImagePlus className="size-4" />
             {photoFile ? 'Change photo' : 'Upload a photo'}
             <input
@@ -1331,43 +1338,46 @@ function CelebrityGuessing({ room }: { room: RoomState }) {
   return (
     <section className="mx-auto max-w-2xl text-center">
       <div className="flex items-center justify-center gap-3">
-        <Badge variant="outline">
+        <Badge
+          variant="outline"
+          className="border-[#ffd84d]/30 bg-[#ffd84d]/10 text-[#ffd84d]"
+        >
           Turn {turn}/{playerCount}
         </Badge>
         <Badge variant="outline">Alphabetical order</Badge>
       </div>
-      <p className="mt-7 text-sm uppercase tracking-[0.2em] text-muted-foreground">
+      <p className="mt-7 font-mono text-xs font-black uppercase tracking-[0.22em] text-[#ff9b8a]">
         Up now
       </p>
-      <h1 className="mt-2 text-5xl font-semibold tracking-tight">
+      <h1 className="farebi-display mt-2 text-6xl font-black tracking-[-0.055em]">
         {active?.name ?? 'Player'}
       </h1>
 
       {isGuesser ? (
-        <div className="mt-10 rounded-2xl border border-border bg-card px-6 py-14">
-          <Camera className="mx-auto size-7 text-muted-foreground" />
-          <h2 className="mt-5 text-2xl font-semibold">
+        <div className="mt-10 rotate-[-1deg] rounded-3xl border border-[#d9ff43]/30 bg-[#d9ff43] px-6 py-14 text-[#10130c] shadow-[8px_8px_0_#ff765f]">
+          <Camera className="mx-auto size-8 opacity-55" />
+          <h2 className="farebi-display mt-5 text-3xl font-black">
             Look away from your phone
           </h2>
-          <p className="mx-auto mt-3 max-w-sm leading-7 text-muted-foreground">
+          <p className="mx-auto mt-3 max-w-sm leading-7 text-[#10130c]/65">
             Everyone else can see the answer. Ask yes-or-no questions and say
             your final guess aloud.
           </p>
         </div>
       ) : (
-        <div className="mt-10 overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="mt-10 overflow-hidden rounded-3xl border border-[#ff765f]/30 bg-[#211a19] shadow-[8px_8px_0_rgba(217,255,67,0.75)]">
           {active?.celebrityTarget?.imageUrl ? (
             <img
               src={active.celebrityTarget.imageUrl}
               alt=""
-              className="aspect-[16/10] w-full object-cover object-top grayscale"
+              className="aspect-[16/10] w-full object-cover object-top"
             />
           ) : null}
           <div className="px-6 py-8">
-            <p className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="font-mono text-xs font-black uppercase tracking-[0.2em] text-[#ff9b8a]">
               The answer
             </p>
-            <h2 className="mt-3 text-4xl font-semibold tracking-tight">
+            <h2 className="farebi-display mt-3 text-5xl font-black tracking-[-0.05em]">
               {active?.celebrityTarget?.name}
             </h2>
             <p className="mt-3 text-sm text-muted-foreground">
@@ -1425,10 +1435,15 @@ function Voting({ room }: { room: RoomState }) {
   return (
     <section className="mx-auto max-w-3xl">
       <div className="text-center">
-        <Badge variant="outline" className="mb-5">
+        <Badge
+          variant="outline"
+          className="mb-5 border-[#ff765f]/35 bg-[#ff765f]/10 font-mono uppercase tracking-[0.15em] text-[#ff9b8a]"
+        >
           Discuss & vote
         </Badge>
-        <h1 className="text-4xl font-semibold tracking-tight">Who is lying?</h1>
+        <h1 className="farebi-display text-5xl font-black tracking-[-0.05em] sm:text-6xl">
+          Who is lying?
+        </h1>
         <p className="mt-3 text-muted-foreground">
           Discuss the statements, then choose any statement—including your own.
           You can change your selection until you confirm it.
@@ -1452,10 +1467,10 @@ function Voting({ room }: { room: RoomState }) {
                   disabled={pending}
                   aria-pressed={selected === player.id}
                   className={cn(
-                    'rounded-lg border p-4 text-left transition-colors disabled:opacity-50',
+                    'rounded-2xl border p-4 text-left transition-[color,background-color,border-color,transform,box-shadow] disabled:opacity-50',
                     selected === player.id
-                      ? 'border-foreground bg-foreground text-background'
-                      : 'border-border bg-card hover:border-white/30',
+                      ? 'translate-x-1 border-[#ff765f] bg-[#ff765f] text-[#10130c] shadow-[-5px_5px_0_#d9ff43]'
+                      : 'border-border bg-card/85 hover:border-[#ff765f]/40',
                   )}
                   onClick={() => setSelected(player.id)}
                 >
@@ -1468,7 +1483,7 @@ function Voting({ room }: { room: RoomState }) {
                         variant="outline"
                         className={cn(
                           selected === player.id &&
-                            'border-background/30 text-background',
+                            'border-[#10130c]/25 text-[#10130c]',
                         )}
                       >
                         Your statement
@@ -1479,7 +1494,7 @@ function Voting({ room }: { room: RoomState }) {
                     className={cn(
                       'mt-2 block text-sm',
                       selected === player.id
-                        ? 'text-background/70'
+                        ? 'text-[#10130c]/70'
                         : 'text-muted-foreground',
                     )}
                   >
@@ -1504,11 +1519,14 @@ function Voting({ room }: { room: RoomState }) {
 
 function WaitingForNextRound() {
   return (
-    <section className="mx-auto max-w-lg text-center">
-      <Badge variant="outline" className="mb-5">
+    <section className="mx-auto max-w-lg rounded-3xl border border-[#64d8ff]/25 bg-[#64d8ff]/[0.07] px-7 py-12 text-center">
+      <Badge
+        variant="outline"
+        className="mb-5 border-[#64d8ff]/30 text-[#64d8ff]"
+      >
         Room joined
       </Badge>
-      <h1 className="text-4xl font-semibold tracking-tight">
+      <h1 className="farebi-display text-5xl font-black leading-[0.95] tracking-[-0.05em]">
         You’re in for the next round
       </h1>
       <p className="mt-3 leading-7 text-muted-foreground">
@@ -1558,10 +1576,13 @@ function Results({ room }: { room: RoomState }) {
   return (
     <section className="mx-auto max-w-3xl">
       <div className="text-center">
-        <Badge variant="outline" className="mb-5">
+        <Badge
+          variant="outline"
+          className="mb-5 border-[#d9ff43]/30 bg-[#d9ff43]/10 font-mono uppercase tracking-[0.15em] text-[#d9ff43]"
+        >
           Results
         </Badge>
-        <h1 className="text-4xl font-semibold tracking-tight">
+        <h1 className="farebi-display text-5xl font-black tracking-[-0.05em] sm:text-6xl">
           {isCelebrity ? 'That’s everyone' : 'Truth revealed'}
         </h1>
         <p className="mt-3 text-muted-foreground">
@@ -1574,14 +1595,29 @@ function Results({ room }: { room: RoomState }) {
         {ranked.map((player, index) => (
           <div
             key={player.id}
-            className="grid grid-cols-[32px_1fr_auto_auto] items-center gap-3 rounded-lg border border-border bg-card px-4 py-4"
+            className={cn(
+              'grid grid-cols-[32px_1fr_auto_auto] items-center gap-3 rounded-2xl border px-4 py-4',
+              index === 0
+                ? 'rotate-[-0.5deg] border-[#d9ff43] bg-[#d9ff43] text-[#10130c] shadow-[5px_5px_0_#ff765f]'
+                : 'border-border bg-card/85',
+            )}
           >
-            <span className="font-mono text-sm text-muted-foreground">
+            <span
+              className={cn(
+                'font-mono text-sm',
+                index === 0 ? 'text-[#10130c]/55' : 'text-muted-foreground',
+              )}
+            >
               {index + 1}
             </span>
             <div>
               <p className="font-medium">{player.name ?? 'Player'}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <p
+                className={cn(
+                  'mt-0.5 text-xs',
+                  index === 0 ? 'text-[#10130c]/60' : 'text-muted-foreground',
+                )}
+              >
                 {isCelebrity
                   ? `Guessed ${player.celebrityTarget?.name ?? 'a celebrity'}`
                   : `“${player.statement}”`}
@@ -1661,13 +1697,13 @@ function PlayerRow({ player }: { player: Player }) {
   const name = player.name ?? 'Player'
 
   return (
-    <div className="flex h-16 items-center gap-3 rounded-lg border border-border bg-card px-4">
-      <div className="grid size-8 place-items-center rounded-full bg-secondary text-xs font-semibold">
+    <div className="flex h-16 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.035] px-4 transition-transform hover:-translate-y-0.5 hover:border-[#d9ff43]/25">
+      <div className="grid size-9 rotate-[-3deg] place-items-center rounded-xl bg-[#d9ff43] text-xs font-black text-[#10130c]">
         {name.slice(0, 1).toUpperCase()}
       </div>
       <span className="text-sm font-medium">{name}</span>
       {player.isHost ? (
-        <Crown className="ml-auto size-3.5 text-muted-foreground" />
+        <Crown className="ml-auto size-4 text-[#ffd84d]" />
       ) : null}
       {player.isCurrent ? (
         <span className="ml-auto text-xs text-muted-foreground">You</span>
@@ -1684,13 +1720,47 @@ function CenteredCard({
   children: React.ReactNode
 }) {
   return (
-    <main className="grid min-h-screen place-items-center px-6">
-      <Card className="w-full max-w-sm text-center">
+    <main className="relative grid min-h-screen place-items-center overflow-hidden bg-[#10130c] px-6 py-16">
+      <PartyBackdrop />
+      <Card className="relative w-full max-w-sm border-[#d9ff43]/25 bg-[#171a14]/95 text-center">
+        <Brand className="mx-auto" />
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
+          <CardTitle className="farebi-display text-3xl font-black leading-tight tracking-[-0.04em]">
+            {title}
+          </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">{children}</CardContent>
       </Card>
+    </main>
+  )
+}
+
+function PartyBackdrop() {
+  return (
+    <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_8%_14%,rgba(217,255,67,0.12),transparent_24%),radial-gradient(circle_at_92%_76%,rgba(255,118,95,0.11),transparent_27%),radial-gradient(circle_at_55%_105%,rgba(100,216,255,0.07),transparent_30%)]" />
+      <div className="absolute -left-24 top-1/3 size-48 rotate-12 rounded-[3rem] border-[24px] border-[#d9ff43]/[0.035]" />
+      <div className="absolute -right-12 top-28 size-36 rounded-full border-[18px] border-[#ff765f]/[0.045]" />
+    </div>
+  )
+}
+
+function RoomLoading({ label }: { label: string }) {
+  return (
+    <main className="relative grid min-h-screen place-items-center overflow-hidden bg-[#10130c] px-6">
+      <PartyBackdrop />
+      <div className="relative text-center">
+        <img
+          src="/favicon-48.png"
+          alt=""
+          width={48}
+          height={48}
+          className="mx-auto size-12 animate-pulse"
+        />
+        <p className="mt-5 font-mono text-xs font-black uppercase tracking-[0.18em] text-[#d9ff43]">
+          {label}
+        </p>
+      </div>
     </main>
   )
 }

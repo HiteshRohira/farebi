@@ -17,7 +17,7 @@ function SheetContent({
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out data-[state=open]:fade-in" />
       <DialogPrimitive.Content
         className={cn(
-          'fixed inset-x-0 bottom-0 z-50 max-h-[90svh] overflow-y-auto rounded-t-2xl border border-border bg-background p-6 shadow-xl outline-none data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom sm:inset-y-0 sm:right-0 sm:left-auto sm:max-h-none sm:w-full sm:max-w-md sm:rounded-none sm:border-y-0 sm:border-r-0 sm:data-[state=closed]:slide-out-to-right sm:data-[state=open]:slide-in-from-right',
+          'fixed inset-x-0 bottom-0 z-50 max-h-[90svh] overflow-y-auto rounded-t-3xl border border-[#d9ff43]/20 bg-[#171a14] p-6 shadow-2xl shadow-black/50 outline-none data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom sm:inset-y-0 sm:right-0 sm:left-auto sm:max-h-none sm:w-full sm:max-w-md sm:rounded-none sm:border-y-0 sm:border-r-0 sm:data-[state=closed]:slide-out-to-right sm:data-[state=open]:slide-in-from-right',
           className,
         )}
         {...props}
@@ -42,7 +42,7 @@ function SheetTitle({
 }: React.ComponentProps<typeof DialogPrimitive.Title>) {
   return (
     <DialogPrimitive.Title
-      className={cn('text-lg font-semibold', className)}
+      className={cn('farebi-display text-xl font-black', className)}
       {...props}
     />
   )

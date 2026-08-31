@@ -15,7 +15,7 @@ function AlertDialogContent({
       <AlertDialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-black/70 data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out data-[state=open]:fade-in" />
       <AlertDialogPrimitive.Content
         className={cn(
-          'fixed top-1/2 left-1/2 z-[60] grid w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-5 rounded-xl border border-border bg-background p-6 shadow-xl outline-none',
+          'fixed top-1/2 left-1/2 z-[60] grid w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-5 rounded-3xl border border-[#d9ff43]/20 bg-[#171a14] p-6 shadow-2xl shadow-black/50 outline-none',
           className,
         )}
         {...props}
@@ -49,7 +49,7 @@ function AlertDialogTitle({
 }: React.ComponentProps<typeof AlertDialogPrimitive.Title>) {
   return (
     <AlertDialogPrimitive.Title
-      className={cn('text-lg font-semibold', className)}
+      className={cn('farebi-display text-xl font-black', className)}
       {...props}
     />
   )

@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 
 import { api } from '../../convex/_generated/api'
 import { AuthOptions } from '@/components/auth-options'
+import { Brand } from '@/components/brand'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useFarebiAuth } from '@/lib/auth-client'
@@ -66,14 +67,7 @@ function Home() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_14%_12%,rgba(214,255,63,0.08),transparent_30%),radial-gradient(circle_at_90%_72%,rgba(255,100,75,0.08),transparent_28%)]" />
       <header className="relative border-b border-border/70">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
-          <a href="#games" className="flex items-center gap-2.5">
-            <span className="grid size-8 rotate-[-3deg] place-items-center rounded-lg bg-[#d9ff43] text-sm font-black text-[#11130d] shadow-[3px_3px_0_#ffffff]">
-              F
-            </span>
-            <span className="farebi-display text-lg font-black tracking-tight">
-              Farebi
-            </span>
-          </a>
+          <Brand />
           {auth.isLoading ? (
             <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
           ) : auth.isAuthenticated ? (
@@ -237,11 +231,29 @@ function RoomSetup({
       >
         <ArrowLeft className="size-4" /> All games
       </button>
-      <div className="rounded-[1.75rem] border border-border bg-card/85 p-6 shadow-2xl shadow-black/20 sm:p-9">
-        <p className="font-mono text-xs font-bold uppercase tracking-[0.22em] text-[#d9ff43]">
+      <div
+        className={cn(
+          'relative overflow-hidden rounded-[1.75rem] border bg-card/90 p-6 shadow-2xl shadow-black/25 sm:p-9',
+          game.accent === 'lime'
+            ? 'border-[#d9ff43]/30'
+            : 'border-[#ff765f]/30',
+        )}
+      >
+        <div
+          className={cn(
+            'pointer-events-none absolute -right-12 -top-12 size-40 rotate-12 rounded-[2.5rem] opacity-[0.07]',
+            game.accent === 'lime' ? 'bg-[#d9ff43]' : 'bg-[#ff765f]',
+          )}
+        />
+        <p
+          className={cn(
+            'relative font-mono text-xs font-bold uppercase tracking-[0.22em]',
+            game.accent === 'lime' ? 'text-[#d9ff43]' : 'text-[#ff8a76]',
+          )}
+        >
           {game.eyebrow}
         </p>
-        <h1 className="farebi-display mt-3 text-4xl font-black tracking-[-0.04em]">
+        <h1 className="farebi-display relative mt-3 text-4xl font-black tracking-[-0.04em]">
           {game.title}
         </h1>
         <p className="mt-3 leading-7 text-muted-foreground">
@@ -249,7 +261,7 @@ function RoomSetup({
           already going.
         </p>
 
-        <div className="mt-8 border-t border-border pt-8">
+        <div className="relative mt-8 border-t border-border pt-8">
           {!auth.isAuthenticated ? (
             <>
               <div className="mb-5 flex items-center gap-2 text-sm font-medium">

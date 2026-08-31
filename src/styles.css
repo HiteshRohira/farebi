@@ -5,25 +5,25 @@
 
 :root {
   color-scheme: dark;
-  --radius: 0.625rem;
-  --background: oklch(0.145 0.006 260);
+  --radius: 0.875rem;
+  --background: oklch(0.155 0.018 125);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.18 0.006 260);
+  --card: oklch(0.19 0.02 125);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.18 0.006 260);
+  --popover: oklch(0.19 0.02 125);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.16 0.006 260);
-  --secondary: oklch(0.235 0.006 260);
+  --primary: oklch(0.92 0.22 117);
+  --primary-foreground: oklch(0.17 0.025 125);
+  --secondary: oklch(0.25 0.025 125);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.235 0.006 260);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.27 0.006 260);
+  --muted: oklch(0.24 0.022 125);
+  --muted-foreground: oklch(0.73 0.025 115);
+  --accent: oklch(0.29 0.045 118);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.92 0.22 117 / 15%);
+  --input: oklch(0.92 0.08 117 / 20%);
+  --ring: oklch(0.92 0.22 117);
 }
 
 @theme inline {
@@ -115,6 +115,6 @@ input {
 }
 
 ::selection {
-  background: var(--foreground);
-  color: var(--background);
+  background: #d9ff43;
+  color: #10130c;
 }

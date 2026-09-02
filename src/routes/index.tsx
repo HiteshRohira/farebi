@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useConvexAuth, useMutation } from 'convex/react'
+import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useConvexAuth, useMutation, useQuery } from 'convex/react'
 import {
   ArrowLeft,
   ArrowRight,
   BadgeQuestionMark,
+  Crown,
   DoorOpen,
   LoaderCircle,
   LockKeyhole,
@@ -19,6 +20,16 @@ import { toast } from 'sonner'
 import { api } from '../../convex/_generated/api'
 import { AuthOptions } from '@/components/auth-options'
 import { Brand } from '@/components/brand'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useFarebiAuth } from '@/lib/auth-client'
@@ -91,6 +102,9 @@ function Home() {
       </header>
 
       <main className="relative mx-auto max-w-6xl px-5 pb-20 pt-14 sm:px-8 sm:pt-20">
+        {auth.isAuthenticated && isConvexConfigured ? (
+          <CurrentRoomCard />
+        ) : null}
         {selectedGame ? (
           <RoomSetup
             gameType={selectedGame}
@@ -101,6 +115,58 @@ function Home() {
         )}
       </main>
     </div>
+  )
+}
+
+function CurrentRoomCard() {
+  const convexAuth = useConvexAuth()
+  const room = useQuery(
+    api.rooms.getCurrentRoom,
+    convexAuth.isAuthenticated ? {} : 'skip',
+  )
+
+  if (!room) return null
+
+  const gameName =
+    room.gameType === 'celebrity' ? 'Who’s That?' : 'Truth or Lie'
+  const status =
+    room.status === 'voting'
+      ? 'Discuss & vote'
+      : room.status === 'celebrity_submitting'
+        ? 'Pick a celebrity'
+        : room.status === 'celebrity_guessing'
+          ? 'Guessing'
+          : room.status
+
+  return (
+    <section className="relative mb-12 overflow-hidden rounded-[1.5rem] border border-[#d9ff43]/35 bg-[#171b11] p-5 shadow-[6px_6px_0_rgba(255,116,95,0.75)] sm:flex sm:items-center sm:justify-between sm:gap-8 sm:p-6">
+      <div className="pointer-events-none absolute -right-8 -top-12 font-mono text-[9rem] font-black leading-none text-[#d9ff43]/[0.035]">
+        {room.code.slice(0, 2)}
+      </div>
+      <div className="relative">
+        <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.18em] text-[#d9ff43]">
+          <span className="size-2 animate-pulse rounded-full bg-[#d9ff43]" />
+          Active room
+          {room.isHost ? (
+            <span className="flex items-center gap-1 text-[#ffd84d]">
+              <Crown className="size-3" /> Host
+            </span>
+          ) : null}
+        </div>
+        <h2 className="farebi-display mt-2 text-3xl font-black tracking-[-0.035em]">
+          Pick up where you left off.
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {gameName} · <span className="capitalize">{status}</span> ·{' '}
+          {room.playerCount}/{room.maxPlayers} players
+        </p>
+      </div>
+      <Button asChild size="lg" className="relative mt-5 shrink-0 sm:mt-0">
+        <Link to="/room/$code" params={{ code: room.code }}>
+          Resume {room.code} <ArrowRight />
+        </Link>
+      </Button>
+    </section>
   )
 }
 
@@ -289,8 +355,16 @@ function GameActions({ gameType }: { gameType: GameType }) {
   const navigate = useNavigate()
   const createRoom = useMutation(api.rooms.createRoom)
   const joinRoom = useMutation(api.rooms.joinRoom)
+  const switchRoom = useMutation(api.rooms.switchRoom)
+  const currentRoom = useQuery(
+    api.rooms.getCurrentRoom,
+    convexAuth.isAuthenticated ? {} : 'skip',
+  )
   const [code, setCode] = useState('')
-  const [pending, setPending] = useState<'create' | 'join' | null>(null)
+  const [switchingCode, setSwitchingCode] = useState<string | null>(null)
+  const [pending, setPending] = useState<'create' | 'join' | 'switch' | null>(
+    null,
+  )
 
   if (convexAuth.isLoading) {
     return (
@@ -330,6 +404,7 @@ function GameActions({ gameType }: { gameType: GameType }) {
     setPending('create')
     try {
       const room = await createRoom({ gameType })
+      if (room.resumed) toast.info('Resuming your active room.')
       await navigate({ to: '/room/$code', params: { code: room.code } })
     } catch (error) {
       toast.error(
@@ -342,17 +417,38 @@ function GameActions({ gameType }: { gameType: GameType }) {
 
   async function join(event: FormEvent) {
     event.preventDefault()
-    if (code.trim().length !== 6) {
+    const nextCode = code.trim().toUpperCase()
+    if (nextCode.length !== 6) {
       toast.error('Enter a six-character room code.')
+      return
+    }
+    if (currentRoom && currentRoom.code !== nextCode) {
+      setSwitchingCode(nextCode)
       return
     }
     setPending('join')
     try {
-      const room = await joinRoom({ code })
+      const room = await joinRoom({ code: nextCode })
       await navigate({ to: '/room/$code', params: { code: room.code } })
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : 'Could not join room.',
+      )
+    } finally {
+      setPending(null)
+    }
+  }
+
+  async function confirmSwitch() {
+    if (!switchingCode) return
+    setPending('switch')
+    try {
+      const room = await switchRoom({ code: switchingCode })
+      setSwitchingCode(null)
+      await navigate({ to: '/room/$code', params: { code: room.code } })
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not switch rooms.',
       )
     } finally {
       setPending(null)
@@ -367,7 +463,14 @@ function GameActions({ gameType }: { gameType: GameType }) {
         disabled={pending !== null}
         onClick={() => void create()}
       >
-        <Plus /> {pending === 'create' ? 'Creating…' : 'Create room'}
+        <Plus />{' '}
+        {pending === 'create'
+          ? currentRoom
+            ? 'Resuming…'
+            : 'Creating…'
+          : currentRoom
+            ? `Resume ${currentRoom.code}`
+            : 'Create room'}
         <ArrowRight />
       </Button>
       <div className="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
@@ -393,6 +496,40 @@ function GameActions({ gameType }: { gameType: GameType }) {
           <DoorOpen /> Join
         </Button>
       </form>
+      <AlertDialog
+        open={Boolean(switchingCode)}
+        onOpenChange={(open) => {
+          if (!open && pending !== 'switch') setSwitchingCode(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {currentRoom?.isHost ? 'End your current room?' : 'Switch rooms?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {currentRoom?.isHost
+                ? `You host ${currentRoom.code}. It will be ended for everyone before you join ${switchingCode}.`
+                : `You’ll leave ${currentRoom?.code} before joining ${switchingCode}. Your old room will keep going.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending === 'switch'}>
+              Stay in {currentRoom?.code}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending === 'switch'}
+              onClick={() => void confirmSwitch()}
+            >
+              {pending === 'switch'
+                ? 'Switching…'
+                : currentRoom?.isHost
+                  ? 'End room & join'
+                  : 'Leave room & join'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

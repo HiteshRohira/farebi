@@ -6,6 +6,7 @@ import {
   assignRoles,
   calculateScoreDeltas,
   createCelebrityTurns,
+  nextTurnOrder,
   resolveDisplayNames,
   shuffledIndexes,
 } from '../convex/lib/game'
@@ -67,6 +68,17 @@ describe('createCelebrityTurns', () => {
     expect(turns.every((turn) => turn.guesserId !== turn.targetPlayerId)).toBe(
       true,
     )
+  })
+})
+
+describe('nextTurnOrder', () => {
+  it('skips turn-order gaps left by a removed player', () => {
+    expect(nextTurnOrder([0, 2, 4], 0)).toBe(2)
+    expect(nextTurnOrder([0, undefined, 4, 2], 2)).toBe(4)
+  })
+
+  it('returns no next turn when the final player was removed', () => {
+    expect(nextTurnOrder([0, undefined], 0)).toBeUndefined()
   })
 })
 

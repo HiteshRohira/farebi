@@ -32,6 +32,17 @@ export function createCelebrityTurns<TPlayerId extends string>(
   }))
 }
 
+export function nextTurnOrder(
+  turnOrders: Array<number | undefined>,
+  currentTurn: number,
+) {
+  return turnOrders
+    .filter((turnOrder): turnOrder is number => turnOrder !== undefined)
+    .filter((turnOrder) => turnOrder > currentTurn)
+    .sort((a, b) => a - b)
+    .at(0)
+}
+
 export function resolveDisplayNames(names: Array<string>) {
   const normalizedNames = names.map((name) => name.trim() || 'Player')
   const firstNames = normalizedNames.map((name) => name.split(/\s+/)[0])

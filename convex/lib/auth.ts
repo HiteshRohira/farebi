@@ -64,6 +64,8 @@ export async function requirePlayer(ctx: AuthCtx, roomId: Id<'rooms'>) {
       q.eq('roomId', roomId).eq('userId', user._id),
     )
     .unique()
-  if (!player) throw new Error('You are not a player in this room.')
+  if (!player || player.leftAt) {
+    throw new Error('You are not an active player in this room.')
+  }
   return { user, player }
 }

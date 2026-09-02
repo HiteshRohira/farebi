@@ -1,9 +1,10 @@
 import { v } from 'convex/values'
 
-import type { Doc } from './_generated/dataModel'
-import type { MutationCtx } from './_generated/server'
-import { mutation, query } from './_generated/server'
+import type { Doc, Id } from './_generated/dataModel'
+import type { MutationCtx, QueryCtx } from './_generated/server'
+import { internalMutation, mutation, query } from './_generated/server'
 import {
+  getCurrentUser,
   requireCurrentUser,
   requirePlayer,
   upsertCurrentUser,
@@ -12,6 +13,7 @@ import {
   assignRoles,
   calculateScoreDeltas,
   createCelebrityTurns,
+  nextTurnOrder,
   resolveDisplayNames,
   shuffledIndexes,
 } from './lib/game'
@@ -25,6 +27,130 @@ const MAX_PHASE_SECONDS = 30 * 60
 const DEFAULT_LIAR_COUNT = 1
 const PHASE_EXTENSION_MS = 30 * 1_000
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const ROOM_INACTIVITY_MS = 24 * 60 * 60 * 1_000
+
+type RoomCtx = MutationCtx | QueryCtx
+
+function roomActivity(now = Date.now()) {
+  return {
+    lastActivityAt: now,
+    expiresAt: now + ROOM_INACTIVITY_MS,
+  }
+}
+
+function isRoomActive(room: Doc<'rooms'>, now = Date.now()) {
+  const expiresAt = room.expiresAt ?? room.createdAt + ROOM_INACTIVITY_MS
+  return !room.endedAt && room.status !== 'finished' && expiresAt > now
+}
+
+async function getActiveMembership(
+  ctx: RoomCtx,
+  userId: Id<'users'>,
+): Promise<{ player: Doc<'players'>; room: Doc<'rooms'> } | null> {
+  const memberships = await ctx.db
+    .query('players')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .collect()
+  const candidates: Array<{
+    player: Doc<'players'>
+    room: Doc<'rooms'>
+  }> = []
+  for (const player of memberships.filter((item) => !item.leftAt)) {
+    const room = await ctx.db.get(player.roomId)
+    if (room && isRoomActive(room)) candidates.push({ player, room })
+  }
+  return (
+    candidates.sort((a, b) => b.player.createdAt - a.player.createdAt).at(0) ??
+    null
+  )
+}
+
+async function getActivePlayers(ctx: RoomCtx, roomId: Id<'rooms'>) {
+  const players = await ctx.db
+    .query('players')
+    .withIndex('by_room', (q) => q.eq('roomId', roomId))
+    .collect()
+  return players.filter((player) => !player.leftAt)
+}
+
+async function joinTargetRoom(
+  ctx: MutationCtx,
+  userId: Id<'users'>,
+  room: Doc<'rooms'>,
+) {
+  if (!isRoomActive(room)) throw new Error('This room has ended or expired.')
+
+  const existing = await ctx.db
+    .query('players')
+    .withIndex('by_room_and_user', (q) =>
+      q.eq('roomId', room._id).eq('userId', userId),
+    )
+    .unique()
+  if (existing?.kickedAt) {
+    throw new Error('The host removed you from this room.')
+  }
+  if (existing && !existing.leftAt) {
+    await ctx.db.patch(room._id, roomActivity())
+    return existing
+  }
+
+  const players = await getActivePlayers(ctx, room._id)
+  if (players.length >= room.maxPlayers) throw new Error('This room is full.')
+
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      leftAt: undefined,
+      joinedForNextRound: room.status !== 'waiting',
+    })
+    await ctx.db.patch(room._id, roomActivity())
+    return existing
+  }
+
+  const playerId = await ctx.db.insert('players', {
+    roomId: room._id,
+    userId,
+    score: 0,
+    hasSubmitted: false,
+    hasVoted: false,
+    joinedForNextRound: room.status !== 'waiting',
+    createdAt: Date.now(),
+  })
+  await ctx.db.patch(room._id, roomActivity())
+  return await ctx.db.get(playerId)
+}
+
+async function endRoomDocument(ctx: MutationCtx, room: Doc<'rooms'>) {
+  const now = Date.now()
+  await ctx.db.patch(room._id, {
+    status: 'finished',
+    endedAt: now,
+    phaseEndsAt: undefined,
+    expiresAt: undefined,
+    lastActivityAt: now,
+  })
+}
+
+async function closeOtherActiveMemberships(
+  ctx: MutationCtx,
+  userId: Id<'users'>,
+  keepRoomId: Id<'rooms'>,
+) {
+  const memberships = await ctx.db
+    .query('players')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .collect()
+  for (const player of memberships) {
+    if (player.roomId === keepRoomId || player.leftAt) continue
+    const room = await ctx.db.get(player.roomId)
+    if (!room || !isRoomActive(room)) continue
+    if (room.hostId === userId) {
+      await endRoomDocument(ctx, room)
+    } else {
+      await ctx.db.patch(player._id, { leftAt: Date.now() })
+      await settlePhaseAfterPlayerRemoval(ctx, room)
+    }
+  }
+}
 
 function validateDurations(
   writingDurationSeconds: number,
@@ -85,12 +211,18 @@ async function finishVoting(
     .query('votes')
     .withIndex('by_room', (q) => q.eq('roomId', room._id))
     .collect()
+  const activePlayerIds = new Set(activePlayers.map((player) => player._id))
+  const activeVotes = votes.filter(
+    (vote) =>
+      activePlayerIds.has(vote.voterId) &&
+      activePlayerIds.has(vote.targetPlayerId),
+  )
   const scoreDeltas = calculateScoreDeltas(
     activePlayers.map((player) => ({
       id: player._id,
       role: player.role!,
     })),
-    votes.map((vote) => ({
+    activeVotes.map((vote) => ({
       voterId: vote.voterId,
       targetPlayerId: vote.targetPlayerId,
     })),
@@ -105,6 +237,7 @@ async function finishVoting(
   await ctx.db.patch(room._id, {
     status: 'results',
     phaseEndsAt: undefined,
+    ...roomActivity(),
   })
 }
 
@@ -125,7 +258,95 @@ async function finishWriting(
     status: 'voting',
     phaseEndsAt:
       Date.now() + durationMs(room, 'discussionVotingDurationSeconds'),
+    ...roomActivity(),
   })
+}
+
+async function startCelebrityGuessing(
+  ctx: MutationCtx,
+  room: Doc<'rooms'>,
+  players: Array<Doc<'players'>>,
+) {
+  if (players.length < 2) {
+    await ctx.db.patch(room._id, {
+      status: 'results',
+      celebrityTurnIndex: undefined,
+      phaseEndsAt: undefined,
+      ...roomActivity(),
+    })
+    return
+  }
+
+  const namedPlayers = []
+  for (const player of players) {
+    const profile = await ctx.db.get(player.userId)
+    namedPlayers.push({ player, name: profile?.name ?? 'Player' })
+  }
+  const turns = createCelebrityTurns(
+    namedPlayers.map((item) => ({ id: item.player._id, name: item.name })),
+  )
+  for (const turn of turns) {
+    await ctx.db.patch(turn.guesserId, {
+      celebrityTurnOrder: turn.turnOrder,
+      celebrityTargetPlayerId: turn.targetPlayerId,
+    })
+  }
+  await ctx.db.patch(room._id, {
+    status: 'celebrity_guessing',
+    celebrityTurnIndex: 0,
+    phaseEndsAt: undefined,
+    ...roomActivity(),
+  })
+}
+
+async function settlePhaseAfterPlayerRemoval(
+  ctx: MutationCtx,
+  room: Doc<'rooms'>,
+) {
+  const players = await getActivePlayers(ctx, room._id)
+  if (room.status === 'writing') {
+    const playing = players.filter((player) => player.role !== undefined)
+    if (playing.every((player) => player.hasSubmitted)) {
+      await finishWriting(ctx, room, players)
+      return
+    }
+  } else if (room.status === 'voting') {
+    const playing = players.filter((player) => player.role !== undefined)
+    if (playing.every((player) => player.hasVoted)) {
+      await finishVoting(ctx, room, players)
+      return
+    }
+  } else if (room.status === 'celebrity_submitting') {
+    const playing = players.filter((player) => !player.joinedForNextRound)
+    if (playing.every((player) => player.hasSubmitted)) {
+      await startCelebrityGuessing(ctx, room, playing)
+      return
+    }
+  } else if (room.status === 'celebrity_guessing') {
+    const currentTurn = room.celebrityTurnIndex ?? 0
+    const currentPlayer = players.find(
+      (player) => player.celebrityTurnOrder === currentTurn,
+    )
+    if (!currentPlayer) {
+      const nextTurn = nextTurnOrder(
+        players.map((player) => player.celebrityTurnOrder),
+        currentTurn,
+      )
+      await ctx.db.patch(
+        room._id,
+        nextTurn === undefined
+          ? {
+              status: 'results',
+              celebrityTurnIndex: undefined,
+              ...roomActivity(),
+            }
+          : { celebrityTurnIndex: nextTurn, ...roomActivity() },
+      )
+      return
+    }
+  }
+
+  await ctx.db.patch(room._id, roomActivity())
 }
 
 export const createRoom = mutation({
@@ -137,6 +358,15 @@ export const createRoom = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await upsertCurrentUser(ctx)
+    const activeMembership = await getActiveMembership(ctx, userId)
+    if (activeMembership) {
+      await closeOtherActiveMemberships(ctx, userId, activeMembership.room._id)
+      return {
+        roomId: activeMembership.room._id,
+        code: activeMembership.room.code,
+        resumed: true,
+      }
+    }
     const maxPlayers = args.maxPlayers ?? 20
     if (!Number.isInteger(maxPlayers) || maxPlayers < 3 || maxPlayers > 20) {
       throw new Error('Room size must be between 3 and 20 players.')
@@ -152,6 +382,7 @@ export const createRoom = mutation({
       code = makeRoomCode()
     }
 
+    const now = Date.now()
     const roomId = await ctx.db.insert('rooms', {
       code,
       hostId: userId,
@@ -161,7 +392,8 @@ export const createRoom = mutation({
       liarCount: DEFAULT_LIAR_COUNT,
       writingDurationSeconds: DEFAULT_WRITING_SECONDS,
       discussionVotingDurationSeconds: DEFAULT_DISCUSSION_VOTING_SECONDS,
-      createdAt: Date.now(),
+      createdAt: now,
+      ...roomActivity(now),
     })
     await ctx.db.insert('players', {
       roomId,
@@ -169,9 +401,9 @@ export const createRoom = mutation({
       score: 0,
       hasSubmitted: false,
       hasVoted: false,
-      createdAt: Date.now(),
+      createdAt: now,
     })
-    return { roomId, code }
+    return { roomId, code, resumed: false }
   },
 })
 
@@ -187,24 +419,126 @@ export const joinRoom = mutation({
         q.eq('roomId', room._id).eq('userId', userId),
       )
       .unique()
-    if (existing) return { roomId: room._id, code: room.code }
+    if (!isRoomActive(room)) {
+      if (existing) return { roomId: room._id, code: room.code }
+      throw new Error('This room has ended or expired.')
+    }
 
-    const players = await ctx.db
-      .query('players')
-      .withIndex('by_room', (q) => q.eq('roomId', room._id))
-      .collect()
-    if (players.length >= room.maxPlayers) throw new Error('This room is full.')
+    const activeMembership = await getActiveMembership(ctx, userId)
+    if (activeMembership && activeMembership.room._id !== room._id) {
+      throw new Error(
+        'You already have an active room. Leave or end it before joining another.',
+      )
+    }
 
-    await ctx.db.insert('players', {
-      roomId: room._id,
-      userId,
-      score: 0,
-      hasSubmitted: false,
-      hasVoted: false,
-      joinedForNextRound: room.status !== 'waiting',
-      createdAt: Date.now(),
-    })
+    await joinTargetRoom(ctx, userId, room)
+    await closeOtherActiveMemberships(ctx, userId, room._id)
     return { roomId: room._id, code: room.code }
+  },
+})
+
+export const switchRoom = mutation({
+  args: { code: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await upsertCurrentUser(ctx)
+    const targetRoom = await findRoomByCode(ctx, args.code)
+    if (!targetRoom) throw new Error('Room not found.')
+    if (!isRoomActive(targetRoom)) {
+      throw new Error('This room has ended or expired.')
+    }
+
+    const activeMembership = await getActiveMembership(ctx, userId)
+    if (activeMembership?.room._id === targetRoom._id) {
+      return { roomId: targetRoom._id, code: targetRoom.code }
+    }
+
+    if (activeMembership) {
+      if (activeMembership.room.hostId === userId) {
+        await endRoomDocument(ctx, activeMembership.room)
+      } else {
+        await ctx.db.patch(activeMembership.player._id, {
+          leftAt: Date.now(),
+        })
+        await settlePhaseAfterPlayerRemoval(ctx, activeMembership.room)
+      }
+    }
+
+    await joinTargetRoom(ctx, userId, targetRoom)
+    await closeOtherActiveMemberships(ctx, userId, targetRoom._id)
+    return { roomId: targetRoom._id, code: targetRoom.code }
+  },
+})
+
+export const getCurrentRoom = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx)
+    if (!user) return null
+    const membership = await getActiveMembership(ctx, user._id)
+    if (!membership) return null
+    const players = await getActivePlayers(ctx, membership.room._id)
+    return {
+      id: membership.room._id,
+      code: membership.room.code,
+      status: membership.room.status,
+      gameType: membership.room.gameType ?? 'truth_or_lie',
+      isHost: membership.room.hostId === user._id,
+      playerCount: players.length,
+      maxPlayers: membership.room.maxPlayers,
+    }
+  },
+})
+
+export const leaveRoom = mutation({
+  args: { roomId: v.id('rooms') },
+  handler: async (ctx, args) => {
+    const { user, player } = await requirePlayer(ctx, args.roomId)
+    const room = await ctx.db.get(args.roomId)
+    if (!room) throw new Error('Room not found.')
+    if (isRoomActive(room) && room.hostId === user._id) {
+      throw new Error('Hosts must end the room before leaving.')
+    }
+    await ctx.db.patch(player._id, { leftAt: Date.now() })
+    if (isRoomActive(room)) await settlePhaseAfterPlayerRemoval(ctx, room)
+  },
+})
+
+export const endRoom = mutation({
+  args: { roomId: v.id('rooms') },
+  handler: async (ctx, args) => {
+    const user = await requireCurrentUser(ctx)
+    const room = await ctx.db.get(args.roomId)
+    if (!room) throw new Error('Room not found.')
+    if (room.hostId !== user._id)
+      throw new Error('Only the host can end the room.')
+    if (!room.endedAt) await endRoomDocument(ctx, room)
+  },
+})
+
+export const kickPlayer = mutation({
+  args: {
+    roomId: v.id('rooms'),
+    playerId: v.id('players'),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireCurrentUser(ctx)
+    const room = await ctx.db.get(args.roomId)
+    if (!room || !isRoomActive(room)) throw new Error('Room not found.')
+    if (room.hostId !== user._id) {
+      throw new Error('Only the host can remove players.')
+    }
+
+    const player = await ctx.db.get(args.playerId)
+    if (!player || player.roomId !== room._id || player.leftAt) {
+      throw new Error('This player is no longer in the room.')
+    }
+    if (player.userId === room.hostId) {
+      throw new Error('The host cannot remove themselves.')
+    }
+
+    const now = Date.now()
+    await ctx.db.patch(player._id, { leftAt: now, kickedAt: now })
+    await settlePhaseAfterPlayerRemoval(ctx, room)
   },
 })
 
@@ -217,6 +551,8 @@ export const getRoom = query({
       .withIndex('by_code', (q) => q.eq('code', args.code.trim().toUpperCase()))
       .unique()
     if (!room) return null
+    const roomIsActive = isRoomActive(room)
+    const status = roomIsActive ? room.status : ('finished' as const)
 
     const currentPlayer = await ctx.db
       .query('players')
@@ -224,15 +560,28 @@ export const getRoom = query({
         q.eq('roomId', room._id).eq('userId', user._id),
       )
       .unique()
-    if (!currentPlayer) throw new Error('You are not a player in this room.')
+    if (!currentPlayer) {
+      throw new Error('You are not a player in this room.')
+    }
+    if (currentPlayer.leftAt && roomIsActive) {
+      return {
+        code: room.code,
+        unavailableReason: currentPlayer.kickedAt
+          ? ('removed' as const)
+          : ('left' as const),
+      }
+    }
 
-    const players = await ctx.db
+    const allPlayers = await ctx.db
       .query('players')
       .withIndex('by_room', (q) => q.eq('roomId', room._id))
       .collect()
+    const players = roomIsActive
+      ? allPlayers.filter((player) => !player.leftAt)
+      : allPlayers
 
     const gameType: GameType = room.gameType ?? 'truth_or_lie'
-    const hideIdentities = room.status === 'voting'
+    const hideIdentities = status === 'voting'
     const orderedPlayers = hideIdentities
       ? [...players].sort(
           (a, b) =>
@@ -243,9 +592,9 @@ export const getRoom = query({
       : players
     const revealNames =
       gameType === 'celebrity' ||
-      room.status === 'waiting' ||
-      room.status === 'results' ||
-      room.status === 'finished'
+      status === 'waiting' ||
+      status === 'results' ||
+      status === 'finished'
 
     const profiles = []
     for (const player of orderedPlayers) {
@@ -257,12 +606,18 @@ export const getRoom = query({
           profiles.map((profile) => profile?.name ?? 'Player'),
         )
       : []
+    const adminDisplayNames =
+      room.hostId === user._id
+        ? resolveDisplayNames(
+            profiles.map((profile) => profile?.name ?? 'Player'),
+          )
+        : []
 
     const celebrityPlayersById = new Map(
-      players.map((player) => [player._id, player]),
+      allPlayers.map((player) => [player._id, player]),
     )
     const activeCelebrityPlayer =
-      room.status === 'celebrity_guessing'
+      status === 'celebrity_guessing'
         ? players.find(
             (player) =>
               player.celebrityTurnOrder === (room.celebrityTurnIndex ?? 0),
@@ -275,9 +630,9 @@ export const getRoom = query({
         ? celebrityPlayersById.get(player.celebrityTargetPlayerId)
         : undefined
       const canSeeCelebrityTarget =
-        room.status === 'results' ||
-        room.status === 'finished' ||
-        (room.status === 'celebrity_guessing' &&
+        status === 'results' ||
+        status === 'finished' ||
+        (status === 'celebrity_guessing' &&
           activeCelebrityPlayer?._id === player._id &&
           currentPlayer._id !== player._id)
       const targetImageUrl = celebrityTarget?.celebrityImageStorageId
@@ -287,6 +642,9 @@ export const getRoom = query({
         id: player._id,
         ...(revealNames
           ? { name: displayNames[index], avatar: profile?.avatar }
+          : {}),
+        ...(room.hostId === user._id
+          ? { adminName: adminDisplayNames[index] }
           : {}),
         isHost: player.userId === room.hostId,
         isCurrent: player._id === currentPlayer._id,
@@ -298,22 +656,22 @@ export const getRoom = query({
             : player.role !== undefined,
         joinedForNextRound: player.joinedForNextRound ?? false,
         statement:
-          room.status === 'waiting' || room.status === 'writing'
+          status === 'waiting' || status === 'writing'
             ? undefined
             : player.statement,
         role:
-          room.status === 'results' || room.status === 'finished'
+          status === 'results' || status === 'finished'
             ? player.role
-            : player._id === currentPlayer._id && room.status === 'writing'
+            : player._id === currentPlayer._id && status === 'writing'
               ? player.role
               : undefined,
         score: player.score,
         celebrityName:
-          player._id === currentPlayer._id || room.status === 'results'
+          player._id === currentPlayer._id || status === 'results'
             ? player.celebrityName
             : undefined,
         celebrityImageUrl:
-          player._id === currentPlayer._id || room.status === 'results'
+          player._id === currentPlayer._id || status === 'results'
             ? player.celebrityImageStorageId
               ? await ctx.storage.getUrl(player.celebrityImageStorageId)
               : player.celebrityImageUrl
@@ -333,7 +691,7 @@ export const getRoom = query({
     return {
       id: room._id,
       code: room.code,
-      status: room.status,
+      status,
       gameType,
       gameTypeLocked: room.gameType !== undefined,
       maxPlayers: room.maxPlayers,
@@ -344,6 +702,11 @@ export const getRoom = query({
         room.discussionVotingDurationSeconds ??
         DEFAULT_DISCUSSION_VOTING_SECONDS,
       phaseEndsAt: room.phaseEndsAt,
+      endedAt:
+        room.endedAt ??
+        (roomIsActive
+          ? undefined
+          : (room.expiresAt ?? room.createdAt + ROOM_INACTIVITY_MS)),
       isHost: room.hostId === user._id,
       currentPlayerId: currentPlayer._id,
       celebrityTurnIndex: room.celebrityTurnIndex ?? 0,
@@ -370,10 +733,7 @@ export const startGame = mutation({
     if (room.status !== 'waiting')
       throw new Error('The game has already started.')
 
-    const players = await ctx.db
-      .query('players')
-      .withIndex('by_room', (q) => q.eq('roomId', room._id))
-      .collect()
+    const players = await getActivePlayers(ctx, room._id)
     if (players.length < 3) throw new Error('At least 3 players are required.')
     if (args.gameType === 'celebrity') {
       for (const player of players) {
@@ -397,6 +757,7 @@ export const startGame = mutation({
         startedAt: Date.now(),
         phaseEndsAt: undefined,
         celebrityTurnIndex: 0,
+        ...roomActivity(),
       })
       return
     }
@@ -445,6 +806,7 @@ export const startGame = mutation({
       startedAt: now,
       phaseEndsAt: now + writingDurationSeconds * 1_000,
       celebrityTurnIndex: undefined,
+      ...roomActivity(now),
     })
   },
 })
@@ -465,11 +827,9 @@ export const submitStatement = mutation({
       statement,
       hasSubmitted: true,
     })
+    await ctx.db.patch(room._id, roomActivity())
 
-    const players = await ctx.db
-      .query('players')
-      .withIndex('by_room', (q) => q.eq('roomId', room._id))
-      .collect()
+    const players = await getActivePlayers(ctx, room._id)
     if (
       players
         .filter((item) => item.role !== undefined)
@@ -490,6 +850,7 @@ export const generateCelebrityUploadUrl = mutation({
     const { player } = await requirePlayer(ctx, args.roomId)
     if (player.joinedForNextRound)
       throw new Error('You will join the next round.')
+    await ctx.db.patch(room._id, roomActivity())
     return await ctx.storage.generateUploadUrl()
   },
 })
@@ -524,11 +885,9 @@ export const submitCelebrity = mutation({
       celebrityImageStorageId: args.imageStorageId,
       hasSubmitted: true,
     })
+    await ctx.db.patch(room._id, roomActivity())
 
-    const players = await ctx.db
-      .query('players')
-      .withIndex('by_room', (q) => q.eq('roomId', room._id))
-      .collect()
+    const players = await getActivePlayers(ctx, room._id)
     const activePlayers = players.filter((item) => !item.joinedForNextRound)
     if (
       !activePlayers.every(
@@ -538,25 +897,7 @@ export const submitCelebrity = mutation({
       return
     }
 
-    const namedPlayers = []
-    for (const item of activePlayers) {
-      const profile = await ctx.db.get(item.userId)
-      namedPlayers.push({ player: item, name: profile?.name ?? 'Player' })
-    }
-    const turns = createCelebrityTurns(
-      namedPlayers.map((item) => ({ id: item.player._id, name: item.name })),
-    )
-    for (const turn of turns) {
-      await ctx.db.patch(turn.guesserId, {
-        celebrityTurnOrder: turn.turnOrder,
-        celebrityTargetPlayerId: turn.targetPlayerId,
-      })
-    }
-    await ctx.db.patch(room._id, {
-      status: 'celebrity_guessing',
-      celebrityTurnIndex: 0,
-      phaseEndsAt: undefined,
-    })
+    await startCelebrityGuessing(ctx, room, activePlayers)
   },
 })
 
@@ -568,10 +909,7 @@ export const advanceCelebrityTurn = mutation({
     if (!room || room.status !== 'celebrity_guessing') {
       throw new Error('There is no celebrity turn to advance.')
     }
-    const players = await ctx.db
-      .query('players')
-      .withIndex('by_room', (q) => q.eq('roomId', room._id))
-      .collect()
+    const players = await getActivePlayers(ctx, room._id)
     const active = players.find(
       (player) => player.celebrityTurnOrder === (room.celebrityTurnIndex ?? 0),
     )
@@ -590,17 +928,21 @@ export const advanceCelebrityTurn = mutation({
       await ctx.db.patch(active._id, { score: active.score + 10 })
     }
 
-    const nextTurn = (room.celebrityTurnIndex ?? 0) + 1
-    if (
-      nextTurn >=
-      players.filter((item) => item.celebrityTurnOrder !== undefined).length
-    ) {
+    const nextTurn = nextTurnOrder(
+      players.map((player) => player.celebrityTurnOrder),
+      room.celebrityTurnIndex ?? 0,
+    )
+    if (nextTurn === undefined) {
       await ctx.db.patch(room._id, {
         status: 'results',
         celebrityTurnIndex: undefined,
+        ...roomActivity(),
       })
     } else {
-      await ctx.db.patch(room._id, { celebrityTurnIndex: nextTurn })
+      await ctx.db.patch(room._id, {
+        celebrityTurnIndex: nextTurn,
+        ...roomActivity(),
+      })
     }
   },
 })
@@ -613,14 +955,11 @@ export const restartRound = mutation({
     if (!room) throw new Error('Room not found.')
     if (room.hostId !== user._id)
       throw new Error('Only the host can start another round.')
-    if (room.status !== 'results' && room.status !== 'finished') {
+    if (room.status !== 'results' || room.endedAt) {
       throw new Error('The current round has not finished.')
     }
 
-    const players = await ctx.db
-      .query('players')
-      .withIndex('by_room', (q) => q.eq('roomId', room._id))
-      .collect()
+    const players = await getActivePlayers(ctx, room._id)
     if (players.length < 3) throw new Error('At least 3 players are required.')
 
     const votes = await ctx.db
@@ -650,6 +989,7 @@ export const restartRound = mutation({
         startedAt: Date.now(),
         phaseEndsAt: undefined,
         celebrityTurnIndex: 0,
+        ...roomActivity(),
       })
       return
     }
@@ -675,6 +1015,7 @@ export const restartRound = mutation({
       status: 'writing',
       startedAt: now,
       phaseEndsAt: now + durationMs(room, 'writingDurationSeconds'),
+      ...roomActivity(now),
     })
   },
 })
@@ -688,7 +1029,7 @@ export const returnToLobby = mutation({
     if (room.hostId !== user._id) {
       throw new Error('Only the host can return to the game shelf.')
     }
-    if (room.status !== 'results' && room.status !== 'finished') {
+    if (room.status !== 'results' || room.endedAt) {
       throw new Error('Finish the current round first.')
     }
 
@@ -698,10 +1039,7 @@ export const returnToLobby = mutation({
       .collect()
     for (const vote of votes) await ctx.db.delete(vote._id)
 
-    const players = await ctx.db
-      .query('players')
-      .withIndex('by_room', (q) => q.eq('roomId', room._id))
-      .collect()
+    const players = await getActivePlayers(ctx, room._id)
     for (const player of players) {
       await ctx.db.patch(player._id, {
         role: undefined,
@@ -723,6 +1061,7 @@ export const returnToLobby = mutation({
       startedAt: undefined,
       phaseEndsAt: undefined,
       celebrityTurnIndex: undefined,
+      ...roomActivity(),
     })
   },
 })
@@ -743,10 +1082,7 @@ export const updateRoomSettings = mutation({
     if (room.status !== 'waiting')
       throw new Error('Settings can only be changed before the game starts.')
 
-    const players = await ctx.db
-      .query('players')
-      .withIndex('by_room', (q) => q.eq('roomId', room._id))
-      .collect()
+    const players = await getActivePlayers(ctx, room._id)
     if (
       !Number.isInteger(args.maxPlayers) ||
       args.maxPlayers < Math.max(3, players.length) ||
@@ -766,6 +1102,7 @@ export const updateRoomSettings = mutation({
       maxPlayers: args.maxPlayers,
       writingDurationSeconds: args.writingDurationSeconds,
       discussionVotingDurationSeconds: args.discussionVotingDurationSeconds,
+      ...roomActivity(),
     })
   },
 })
@@ -779,10 +1116,7 @@ export const endPhaseEarly = mutation({
     if (room.hostId !== user._id)
       throw new Error('Only the host can end a phase early.')
 
-    const players = await ctx.db
-      .query('players')
-      .withIndex('by_room', (q) => q.eq('roomId', room._id))
-      .collect()
+    const players = await getActivePlayers(ctx, room._id)
     if (room.status === 'writing') {
       await finishWriting(ctx, room, players)
     } else if (room.status === 'voting') {
@@ -810,6 +1144,7 @@ export const addPhaseTime = mutation({
 
     await ctx.db.patch(room._id, {
       phaseEndsAt: Math.max(room.phaseEndsAt, Date.now()) + PHASE_EXTENSION_MS,
+      ...roomActivity(),
     })
   },
 })
@@ -824,7 +1159,7 @@ export const vote = mutation({
     const { player } = await requirePlayer(ctx, args.roomId)
     if (!player.role) throw new Error('You will join the next round.')
     const target = await ctx.db.get(args.targetPlayerId)
-    if (!target || target.roomId !== room._id || !target.role)
+    if (!target || target.roomId !== room._id || !target.role || target.leftAt)
       throw new Error('Invalid vote target.')
 
     const existing = await ctx.db
@@ -842,11 +1177,9 @@ export const vote = mutation({
       createdAt: Date.now(),
     })
     await ctx.db.patch(player._id, { hasVoted: true })
+    await ctx.db.patch(room._id, roomActivity())
 
-    const players = await ctx.db
-      .query('players')
-      .withIndex('by_room', (q) => q.eq('roomId', room._id))
-      .collect()
+    const players = await getActivePlayers(ctx, room._id)
     if (
       players
         .filter((item) => item.role !== undefined)
@@ -865,14 +1198,27 @@ export const advancePhase = mutation({
     await requirePlayer(ctx, args.roomId)
     if (!room.phaseEndsAt || room.phaseEndsAt > Date.now()) return
 
-    const players = await ctx.db
-      .query('players')
-      .withIndex('by_room', (q) => q.eq('roomId', room._id))
-      .collect()
+    const players = await getActivePlayers(ctx, room._id)
     if (room.status === 'writing') {
       await finishWriting(ctx, room, players)
     } else if (room.status === 'voting') {
       await finishVoting(ctx, room, players)
+    }
+  },
+})
+
+export const expireInactiveRooms = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now()
+    const rooms = await ctx.db
+      .query('rooms')
+      .withIndex('by_expires_at', (q) => q.lte('expiresAt', now))
+      .take(100)
+    for (const room of rooms) {
+      if (!room.endedAt && room.status !== 'finished') {
+        await endRoomDocument(ctx, room)
+      }
     }
   },
 })

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link, createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useConvexAuth, useMutation, useQuery } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
 import {
@@ -9,6 +9,7 @@ import {
   Check,
   Clock3,
   Crown,
+  DoorOpen,
   ExternalLink,
   ImagePlus,
   Link2,
@@ -20,6 +21,7 @@ import {
   Send,
   SlidersHorizontal,
   Sparkles,
+  UserMinus,
   UserRoundCheck,
   Users,
 } from 'lucide-react'
@@ -78,7 +80,8 @@ import {
 import { cn } from '@/lib/utils'
 import { isConvexConfigured } from '@/providers/app-provider'
 
-type RoomState = NonNullable<FunctionReturnType<typeof api.rooms.getRoom>>
+type RoomQueryResult = FunctionReturnType<typeof api.rooms.getRoom>
+type RoomState = Extract<NonNullable<RoomQueryResult>, { id: unknown }>
 type Player = RoomState['players'][number]
 
 function getRoomLink(code: string) {
@@ -89,7 +92,23 @@ function roomStatusLabel(status: RoomState['status']) {
   if (status === 'voting') return 'Discuss & vote'
   if (status === 'celebrity_submitting') return 'Pick a celebrity'
   if (status === 'celebrity_guessing') return 'Guessing'
+  if (status === 'finished') return 'Ended'
   return status
+}
+
+function adminPlayerStatus(room: RoomState, player: Player) {
+  if (player.joinedForNextRound) return 'Next round'
+  if (room.status === 'writing' || room.status === 'celebrity_submitting') {
+    return player.hasSubmitted ? 'Ready' : 'Waiting'
+  }
+  if (room.status === 'voting') return player.hasVoted ? 'Voted' : 'Waiting'
+  if (
+    room.status === 'celebrity_guessing' &&
+    room.activeCelebrityPlayerId === player.id
+  ) {
+    return 'Taking turn'
+  }
+  return 'In room'
 }
 
 async function copyRoomLink(code: string) {
@@ -163,13 +182,19 @@ function ConvexRoomGate({ code }: { code: string }) {
 
 function ConnectedRoom({ code }: { code: string }) {
   const joinRoom = useMutation(api.rooms.joinRoom)
+  const switchRoom = useMutation(api.rooms.switchRoom)
+  const currentRoom = useQuery(api.rooms.getCurrentRoom)
   const [hasJoined, setHasJoined] = useState(false)
+  const [switching, setSwitching] = useState(false)
   const [joinError, setJoinError] = useState<string | null>(null)
   const room = useQuery(api.rooms.getRoom, hasJoined ? { code } : 'skip')
   const advancePhase = useMutation(api.rooms.advancePhase)
   const [advancing, setAdvancing] = useState(false)
 
   useEffect(() => {
+    if (hasJoined) return
+    if (currentRoom === undefined) return
+    if (currentRoom && currentRoom.code !== code.trim().toUpperCase()) return
     let active = true
     void joinRoom({ code })
       .then(() => {
@@ -177,20 +202,39 @@ function ConnectedRoom({ code }: { code: string }) {
       })
       .catch((error: unknown) => {
         if (!active) return
+        const message =
+          error instanceof Error ? error.message : 'Could not join this room.'
         setJoinError(
-          error instanceof Error ? error.message : 'Could not join this room.',
+          message.includes('The host removed you from this room')
+            ? 'The host removed you from this room. You cannot rejoin.'
+            : message,
         )
       })
     return () => {
       active = false
     }
-  }, [code, joinRoom])
+  }, [code, currentRoom, hasJoined, joinRoom])
+
+  async function confirmSwitch() {
+    setSwitching(true)
+    try {
+      await switchRoom({ code })
+      setHasJoined(true)
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not switch rooms.',
+      )
+    } finally {
+      setSwitching(false)
+    }
+  }
 
   const advance = useCallback(async () => {
-    if (!room || advancing) return
+    const roomId = room && 'id' in room ? room.id : undefined
+    if (!roomId || advancing) return
     setAdvancing(true)
     try {
-      await advancePhase({ roomId: room.id })
+      await advancePhase({ roomId })
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : 'Could not advance phase.',
@@ -199,6 +243,60 @@ function ConnectedRoom({ code }: { code: string }) {
       setAdvancing(false)
     }
   }, [advancePhase, advancing, room])
+
+  if (currentRoom === undefined) {
+    return <RoomLoading label="Checking your current room…" />
+  }
+
+  if (currentRoom && currentRoom.code !== code.trim().toUpperCase()) {
+    return (
+      <CenteredCard title="You’re already in another room">
+        <p className="text-sm leading-6 text-muted-foreground">
+          {currentRoom.isHost
+            ? `You host ${currentRoom.code}. Switching will end it for everyone before you join ${code.toUpperCase()}.`
+            : `You’ll leave ${currentRoom.code} before joining ${code.toUpperCase()}.`}
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button asChild variant="outline">
+            <Link to="/room/$code" params={{ code: currentRoom.code }}>
+              Resume {currentRoom.code}
+            </Link>
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button disabled={switching}>
+                {currentRoom.isHost ? 'End & join' : 'Leave & join'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {currentRoom.isHost
+                    ? `End ${currentRoom.code}?`
+                    : `Leave ${currentRoom.code}?`}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This change happens immediately. You’ll continue in room{' '}
+                  {code.toUpperCase()}.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={switching}>
+                  Stay here
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={switching}
+                  onClick={() => void confirmSwitch()}
+                >
+                  {switching ? 'Switching…' : 'Confirm switch'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </CenteredCard>
+    )
+  }
 
   if (joinError) {
     return (
@@ -218,6 +316,27 @@ function ConnectedRoom({ code }: { code: string }) {
   if (room === null) {
     return (
       <CenteredCard title="Room not found">
+        <Button asChild variant="outline">
+          <Link to="/">Back home</Link>
+        </Button>
+      </CenteredCard>
+    )
+  }
+
+  if ('unavailableReason' in room) {
+    return (
+      <CenteredCard
+        title={
+          room.unavailableReason === 'removed'
+            ? 'You were removed from this room'
+            : 'You left this room'
+        }
+      >
+        <p className="text-sm leading-6 text-muted-foreground">
+          {room.unavailableReason === 'removed'
+            ? 'The host removed your seat. You cannot rejoin this room.'
+            : 'Your seat is no longer active in this room.'}
+        </p>
         <Button asChild variant="outline">
           <Link to="/">Back home</Link>
         </Button>
@@ -251,9 +370,8 @@ function ConnectedRoom({ code }: { code: string }) {
             ) : null}
           </>
         )}
-        {room.status === 'results' || room.status === 'finished' ? (
-          <Results room={room} />
-        ) : null}
+        {room.status === 'results' ? <Results room={room} /> : null}
+        {room.status === 'finished' ? <EndedRoom room={room} /> : null}
       </main>
     </div>
   )
@@ -294,10 +412,80 @@ function RoomHeader({
           {room.phaseEndsAt ? (
             <Timer endsAt={room.phaseEndsAt} onExpire={onExpire} />
           ) : null}
-          {room.isHost ? <AdminControls room={room} /> : null}
+          {room.isHost && room.status !== 'finished' ? (
+            <AdminControls room={room} />
+          ) : null}
+          {room.status !== 'finished' ? <RoomExitControl room={room} /> : null}
         </div>
       </div>
     </header>
+  )
+}
+
+function RoomExitControl({ room }: { room: RoomState }) {
+  const navigate = useNavigate()
+  const leaveRoom = useMutation(api.rooms.leaveRoom)
+  const endRoom = useMutation(api.rooms.endRoom)
+  const [pending, setPending] = useState(false)
+
+  async function exitRoom() {
+    setPending(true)
+    try {
+      if (room.isHost) {
+        await endRoom({ roomId: room.id })
+      } else {
+        await leaveRoom({ roomId: room.id })
+      }
+      await navigate({ to: '/' })
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : room.isHost
+            ? 'Could not end room.'
+            : 'Could not leave room.',
+      )
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={room.isHost ? 'End room' : 'Leave room'}
+        >
+          <DoorOpen />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {room.isHost ? 'End this room?' : 'Leave this room?'}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {room.isHost
+              ? 'The game will stop for everyone and this room code can no longer be joined.'
+              : 'You can rejoin later with the room code if the room is still active.'}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Keep playing</AlertDialogCancel>
+          <AlertDialogAction disabled={pending} onClick={() => void exitRoom()}>
+            {pending
+              ? room.isHost
+                ? 'Ending…'
+                : 'Leaving…'
+              : room.isHost
+                ? 'End room'
+                : 'Leave room'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
@@ -305,8 +493,12 @@ function AdminControls({ room }: { room: RoomState }) {
   const updateRoomSettings = useMutation(api.rooms.updateRoomSettings)
   const endPhaseEarly = useMutation(api.rooms.endPhaseEarly)
   const addPhaseTime = useMutation(api.rooms.addPhaseTime)
+  const kickPlayer = useMutation(api.rooms.kickPlayer)
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState(false)
+  const [kickingPlayerId, setKickingPlayerId] = useState<Id<'players'> | null>(
+    null,
+  )
   const [settings, setSettings] = useState(() => ({
     maxPlayers: room.maxPlayers,
     writingDurationMinutes: room.writingDurationSeconds / 60,
@@ -374,6 +566,22 @@ function AdminControls({ room }: { room: RoomState }) {
       )
     } finally {
       setPending(false)
+    }
+  }
+
+  async function removePlayer(player: Player) {
+    setKickingPlayerId(player.id)
+    try {
+      await kickPlayer({ roomId: room.id, playerId: player.id })
+      toast.success(
+        `${player.adminName ?? player.name ?? 'Player'} was removed.`,
+      )
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not remove player.',
+      )
+    } finally {
+      setKickingPlayerId(null)
     }
   }
 
@@ -498,6 +706,101 @@ function AdminControls({ room }: { room: RoomState }) {
             There are no controls for this phase.
           </p>
         )}
+
+        <div className="mt-8 border-t border-white/10 pt-7">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] text-[#ff9b8a]">
+                Room crew
+              </p>
+              <h3 className="farebi-display mt-1 text-lg font-black">
+                Remove an inactive player
+              </h3>
+            </div>
+            <span className="font-mono text-xs text-muted-foreground">
+              {room.players.length - 1}{' '}
+              {room.players.length === 2 ? 'guest' : 'guests'}
+            </span>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Farebi does not guess who is offline. Remove someone only when your
+            group knows they have stopped playing.
+          </p>
+          <div className="mt-4 grid gap-2">
+            {room.players.filter((player) => !player.isHost).length ? (
+              room.players
+                .filter((player) => !player.isHost)
+                .map((player) => {
+                  const name = player.adminName ?? player.name ?? 'Player'
+                  const status = adminPlayerStatus(room, player)
+                  return (
+                    <div
+                      key={player.id}
+                      className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3"
+                    >
+                      <span className="grid size-9 shrink-0 rotate-[-3deg] place-items-center rounded-xl bg-[#d9ff43] text-xs font-black text-[#10130c]">
+                        {name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{name}</p>
+                        <p
+                          className={cn(
+                            'mt-0.5 font-mono text-[10px] uppercase tracking-[0.12em]',
+                            status === 'Waiting'
+                              ? 'text-[#ff9b8a]'
+                              : 'text-muted-foreground',
+                          )}
+                        >
+                          {status}
+                        </p>
+                      </div>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="ml-auto text-muted-foreground hover:bg-[#ff765f]/10 hover:text-[#ff9b8a]"
+                            disabled={kickingPlayerId !== null}
+                            aria-label={`Remove ${name}`}
+                          >
+                            <UserMinus />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Remove {name}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Their seat will be removed immediately and they
+                              will not be able to rejoin room {room.code}.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel
+                              disabled={kickingPlayerId === player.id}
+                            >
+                              Keep player
+                            </AlertDialogCancel>
+                            <AlertDialogAction
+                              disabled={kickingPlayerId === player.id}
+                              onClick={() => void removePlayer(player)}
+                            >
+                              {kickingPlayerId === player.id
+                                ? 'Removing…'
+                                : 'Remove player'}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  )
+                })
+            ) : (
+              <div className="rounded-2xl border border-dashed border-white/10 px-4 py-5 text-center text-sm text-muted-foreground">
+                No guests to remove.
+              </div>
+            )}
+          </div>
+        </div>
       </SheetContent>
     </Sheet>
   )
@@ -1319,8 +1622,18 @@ function CelebrityGuessing({ room }: { room: RoomState }) {
   )
   const isGuesser = active?.isCurrent ?? false
   const canAdvance = room.isHost || isGuesser
-  const turn = room.celebrityTurnIndex + 1
-  const playerCount = room.players.filter((player) => player.isPlaying).length
+  const turnPlayers = room.players
+    .filter(
+      (player) => player.isPlaying && player.celebrityTurnOrder !== undefined,
+    )
+    .sort((a, b) => (a.celebrityTurnOrder ?? 0) - (b.celebrityTurnOrder ?? 0))
+  const turn = Math.max(
+    1,
+    turnPlayers.findIndex(
+      (player) => player.id === room.activeCelebrityPlayerId,
+    ) + 1,
+  )
+  const playerCount = turnPlayers.length
 
   async function finishTurn(guessed: boolean) {
     setPending(true)
@@ -1537,6 +1850,54 @@ function WaitingForNextRound() {
   )
 }
 
+function EndedRoom({ room }: { room: RoomState }) {
+  const ranked = [...room.players].sort((a, b) => b.score - a.score)
+
+  return (
+    <section className="mx-auto max-w-2xl text-center">
+      <div className="mx-auto grid size-20 rotate-[-4deg] place-items-center rounded-[1.75rem] bg-[#ff765f] text-[#10130c] shadow-[6px_6px_0_#d9ff43]">
+        <DoorOpen className="size-9" />
+      </div>
+      <Badge
+        variant="outline"
+        className="mb-5 mt-10 border-[#ff765f]/35 bg-[#ff765f]/10 font-mono uppercase tracking-[0.15em] text-[#ff9b8a]"
+      >
+        Room {room.code} ended
+      </Badge>
+      <h1 className="farebi-display text-5xl font-black tracking-[-0.05em] sm:text-6xl">
+        That’s a wrap.
+      </h1>
+      <p className="mx-auto mt-4 max-w-lg leading-7 text-muted-foreground">
+        This room is closed and won’t accept new players. The final scoreboard
+        is here whenever you need one last victory lap.
+      </p>
+      {ranked.length ? (
+        <div className="mt-9 grid gap-2 text-left">
+          {ranked.map((player, index) => (
+            <div
+              key={player.id}
+              className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.035] px-5 py-4"
+            >
+              <span className="w-6 font-mono text-xs text-muted-foreground">
+                {String(index + 1).padStart(2, '0')}
+              </span>
+              <span className="font-medium">{player.name ?? 'Player'}</span>
+              <span className="ml-auto font-mono text-sm text-[#d9ff43]">
+                {player.score} pts
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <Button asChild size="lg" className="mt-8">
+        <Link to="/">
+          Back to games <ArrowLeft />
+        </Link>
+      </Button>
+    </section>
+  )
+}
+
 function Results({ room }: { room: RoomState }) {
   const restartRound = useMutation(api.rooms.restartRound)
   const returnToLobby = useMutation(api.rooms.returnToLobby)
@@ -1686,9 +2047,6 @@ function Results({ room }: { room: RoomState }) {
           The host can replay this game or take the room back to the game shelf.
         </p>
       )}
-      <Button asChild variant="ghost" className="mt-3 w-full">
-        <Link to="/">Leave room</Link>
-      </Button>
     </section>
   )
 }

@@ -47,7 +47,12 @@ export default defineSchema({
     startedAt: v.optional(v.number()),
     phaseEndsAt: v.optional(v.number()),
     celebrityTurnIndex: v.optional(v.number()),
-  }).index('by_code', ['code']),
+    lastActivityAt: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
+    endedAt: v.optional(v.number()),
+  })
+    .index('by_code', ['code'])
+    .index('by_expires_at', ['expiresAt']),
 
   players: defineTable({
     roomId: v.id('rooms'),
@@ -65,6 +70,8 @@ export default defineSchema({
     celebrityTargetPlayerId: v.optional(v.id('players')),
     celebrityTurnOrder: v.optional(v.number()),
     celebrityWasGuessed: v.optional(v.boolean()),
+    leftAt: v.optional(v.number()),
+    kickedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_room', ['roomId'])

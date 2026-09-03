@@ -10,9 +10,11 @@
 
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
+import type * as data_impostor_words from "../data/impostor_words.js";
 import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_game from "../lib/game.js";
+import type * as lib_impostor_game from "../lib/impostor_game.js";
 import type * as rooms from "../rooms.js";
 import type * as users from "../users.js";
 
@@ -25,9 +27,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   crons: typeof crons;
+  "data/impostor_words": typeof data_impostor_words;
   http: typeof http;
   "lib/auth": typeof lib_auth;
   "lib/game": typeof lib_game;
+  "lib/impostor_game": typeof lib_impostor_game;
   rooms: typeof rooms;
   users: typeof users;
 }>;

@@ -2,8 +2,9 @@
 
 A party-game platform with instant solo play and realtime multiplayer, built with React, TanStack Router,
 Tailwind CSS, shadcn/ui, Convex, and Better Auth. The same room can currently
-play Truth or Lie and Who’s That?. The game is chosen before creating a room,
-and Who’s That? can also start instantly in a room-free landscape solo mode.
+play Truth or Lie, Who’s That?, and Impostor. The game is chosen before creating
+a room, and Who’s That? can also start instantly in a room-free landscape solo
+mode.
 
 Who’s That? ships with a conservative catalogue of people broadly recognizable
 in India. Built-in photos are resolved through

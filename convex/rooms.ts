@@ -3,6 +3,7 @@ import { v } from 'convex/values'
 import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 import { internalMutation, mutation, query } from './_generated/server'
+import { IMPOSTOR_WORD_PAIRS } from './data/impostor_words'
 import {
   getCurrentUser,
   requireCurrentUser,
@@ -17,14 +18,22 @@ import {
   resolveDisplayNames,
   shuffledIndexes,
 } from './lib/game'
+import {
+  assignImpostorRoles,
+  chooseImpostorWords,
+  resolveImpostorVote,
+} from './lib/impostor_game'
 
-type GameType = 'truth_or_lie' | 'celebrity'
+type GameType = 'truth_or_lie' | 'celebrity' | 'impostor'
 
 const DEFAULT_WRITING_SECONDS = 5 * 60
 const DEFAULT_DISCUSSION_VOTING_SECONDS = 10 * 60
 const MIN_PHASE_SECONDS = 0.5 * 60
 const MAX_PHASE_SECONDS = 30 * 60
 const DEFAULT_LIAR_COUNT = 1
+const DEFAULT_IMPOSTOR_COUNT = 1
+const DEFAULT_IMPOSTOR_VOTING_VISIBILITY = 'anonymous' as const
+const DEFAULT_IMPOSTOR_TIE_RULE = 'eliminate_none' as const
 const PHASE_EXTENSION_MS = 30 * 1_000
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const ROOM_INACTIVITY_MS = 24 * 60 * 60 * 1_000
@@ -92,6 +101,10 @@ async function joinTargetRoom(
   if (existing && !existing.leftAt) {
     await ctx.db.patch(room._id, roomActivity())
     return existing
+  }
+
+  if (room.gameType === 'impostor' && room.status !== 'waiting') {
+    throw new Error('This Impostor game has already started.')
   }
 
   const players = await getActivePlayers(ctx, room._id)
@@ -299,6 +312,65 @@ async function startCelebrityGuessing(
   })
 }
 
+async function deleteImpostorVotes(ctx: MutationCtx, roomId: Id<'rooms'>) {
+  const votes = await ctx.db
+    .query('impostorVotes')
+    .withIndex('by_room', (q) => q.eq('roomId', roomId))
+    .collect()
+  for (const vote of votes) await ctx.db.delete(vote._id)
+}
+
+async function finishImpostorVoting(
+  ctx: MutationCtx,
+  room: Doc<'rooms'>,
+  players: Array<Doc<'players'>>,
+) {
+  const round = room.impostorRound ?? 1
+  const activePlayers = players.filter(
+    (player) =>
+      player.impostorRole !== undefined &&
+      player.impostorEliminatedRound === undefined,
+  )
+  const activeIds = new Set(activePlayers.map((player) => player._id))
+  const votes = await ctx.db
+    .query('impostorVotes')
+    .withIndex('by_room_and_round', (q) =>
+      q.eq('roomId', room._id).eq('round', round),
+    )
+    .collect()
+  const validVotes = votes.filter(
+    (vote) =>
+      activeIds.has(vote.voterId) &&
+      activeIds.has(vote.targetPlayerId) &&
+      vote.voterId !== vote.targetPlayerId,
+  )
+  if (validVotes.length !== activePlayers.length) return
+
+  const resolution = resolveImpostorVote(
+    activePlayers.map((player) => ({
+      id: player._id,
+      role: player.impostorRole!,
+    })),
+    validVotes.map((vote) => ({
+      voterId: vote.voterId,
+      targetPlayerId: vote.targetPlayerId,
+    })),
+    room.impostorTieRule ?? DEFAULT_IMPOSTOR_TIE_RULE,
+  )
+  for (const playerId of resolution.eliminatedIds) {
+    await ctx.db.patch(playerId, { impostorEliminatedRound: round })
+  }
+
+  await ctx.db.patch(room._id, {
+    status: resolution.gameComplete ? 'results' : 'impostor_playing',
+    impostorRound: resolution.gameComplete ? round : round + 1,
+    impostorLastVoteRound: round,
+    impostorLastEliminatedPlayerIds: resolution.eliminatedIds,
+    phaseEndsAt: undefined,
+    ...roomActivity(),
+  })
+}
+
 async function settlePhaseAfterPlayerRemoval(
   ctx: MutationCtx,
   room: Doc<'rooms'>,
@@ -344,6 +416,38 @@ async function settlePhaseAfterPlayerRemoval(
       )
       return
     }
+  } else if (room.status === 'impostor_playing') {
+    const round = room.impostorRound ?? 1
+    const playing = players.filter(
+      (player) =>
+        player.impostorRole !== undefined &&
+        player.impostorEliminatedRound === undefined,
+    )
+    const playingIds = new Set(playing.map((player) => player._id))
+    const votes = await ctx.db
+      .query('impostorVotes')
+      .withIndex('by_room_and_round', (q) =>
+        q.eq('roomId', room._id).eq('round', round),
+      )
+      .collect()
+    for (const vote of votes) {
+      if (
+        !playingIds.has(vote.voterId) ||
+        !playingIds.has(vote.targetPlayerId)
+      ) {
+        await ctx.db.delete(vote._id)
+      }
+    }
+    if (!playing.some((player) => player.impostorRole === 'impostor')) {
+      await ctx.db.patch(room._id, {
+        status: 'results',
+        phaseEndsAt: undefined,
+        ...roomActivity(),
+      })
+      return
+    }
+    await finishImpostorVoting(ctx, room, playing)
+    return
   }
 
   await ctx.db.patch(room._id, roomActivity())
@@ -353,7 +457,11 @@ export const createRoom = mutation({
   args: {
     maxPlayers: v.optional(v.number()),
     gameType: v.optional(
-      v.union(v.literal('truth_or_lie'), v.literal('celebrity')),
+      v.union(
+        v.literal('truth_or_lie'),
+        v.literal('celebrity'),
+        v.literal('impostor'),
+      ),
     ),
   },
   handler: async (ctx, args) => {
@@ -392,6 +500,9 @@ export const createRoom = mutation({
       liarCount: DEFAULT_LIAR_COUNT,
       writingDurationSeconds: DEFAULT_WRITING_SECONDS,
       discussionVotingDurationSeconds: DEFAULT_DISCUSSION_VOTING_SECONDS,
+      impostorCount: DEFAULT_IMPOSTOR_COUNT,
+      impostorVotingVisibility: DEFAULT_IMPOSTOR_VOTING_VISIBILITY,
+      impostorTieRule: DEFAULT_IMPOSTOR_TIE_RULE,
       createdAt: now,
       ...roomActivity(now),
     })
@@ -446,6 +557,17 @@ export const switchRoom = mutation({
     if (!isRoomActive(targetRoom)) {
       throw new Error('This room has ended or expired.')
     }
+    if (targetRoom.gameType === 'impostor' && targetRoom.status !== 'waiting') {
+      const existingTargetMembership = await ctx.db
+        .query('players')
+        .withIndex('by_room_and_user', (q) =>
+          q.eq('roomId', targetRoom._id).eq('userId', userId),
+        )
+        .unique()
+      if (!existingTargetMembership || existingTargetMembership.leftAt) {
+        throw new Error('This Impostor game has already started.')
+      }
+    }
 
     const activeMembership = await getActiveMembership(ctx, userId)
     if (activeMembership?.room._id === targetRoom._id) {
@@ -498,7 +620,12 @@ export const leaveRoom = mutation({
     if (isRoomActive(room) && room.hostId === user._id) {
       throw new Error('Hosts must end the room before leaving.')
     }
-    await ctx.db.patch(player._id, { leftAt: Date.now() })
+    await ctx.db.patch(player._id, {
+      leftAt: Date.now(),
+      ...(room.status === 'impostor_playing' && player.impostorRole
+        ? { impostorEliminatedRound: room.impostorRound ?? 1 }
+        : {}),
+    })
     if (isRoomActive(room)) await settlePhaseAfterPlayerRemoval(ctx, room)
   },
 })
@@ -537,7 +664,13 @@ export const kickPlayer = mutation({
     }
 
     const now = Date.now()
-    await ctx.db.patch(player._id, { leftAt: now, kickedAt: now })
+    await ctx.db.patch(player._id, {
+      leftAt: now,
+      kickedAt: now,
+      ...(room.status === 'impostor_playing' && player.impostorRole
+        ? { impostorEliminatedRound: room.impostorRound ?? 1 }
+        : {}),
+    })
     await settlePhaseAfterPlayerRemoval(ctx, room)
   },
 })
@@ -581,7 +714,7 @@ export const getRoom = query({
       : allPlayers
 
     const gameType: GameType = room.gameType ?? 'truth_or_lie'
-    const hideIdentities = status === 'voting'
+    const hideIdentities = status === 'voting' && gameType === 'truth_or_lie'
     const orderedPlayers = hideIdentities
       ? [...players].sort(
           (a, b) =>
@@ -592,6 +725,7 @@ export const getRoom = query({
       : players
     const revealNames =
       gameType === 'celebrity' ||
+      gameType === 'impostor' ||
       status === 'waiting' ||
       status === 'results' ||
       status === 'finished'
@@ -611,6 +745,36 @@ export const getRoom = query({
         ? resolveDisplayNames(
             profiles.map((profile) => profile?.name ?? 'Player'),
           )
+        : []
+    const displayNameByPlayerId = new Map(
+      orderedPlayers.map((player, index) => [
+        player._id,
+        revealNames
+          ? displayNames[index]
+          : room.hostId === user._id
+            ? adminDisplayNames[index]
+            : 'Player',
+      ]),
+    )
+
+    const impostorRound = room.impostorRound ?? 1
+    const currentImpostorVotes =
+      gameType === 'impostor' && status === 'impostor_playing'
+        ? await ctx.db
+            .query('impostorVotes')
+            .withIndex('by_room_and_round', (q) =>
+              q.eq('roomId', room._id).eq('round', impostorRound),
+            )
+            .collect()
+        : []
+    const lastImpostorVotes =
+      gameType === 'impostor' && room.impostorLastVoteRound !== undefined
+        ? await ctx.db
+            .query('impostorVotes')
+            .withIndex('by_room_and_round', (q) =>
+              q.eq('roomId', room._id).eq('round', room.impostorLastVoteRound!),
+            )
+            .collect()
         : []
 
     const celebrityPlayersById = new Map(
@@ -653,7 +817,10 @@ export const getRoom = query({
         isPlaying:
           gameType === 'celebrity'
             ? !(player.joinedForNextRound ?? false)
-            : player.role !== undefined,
+            : gameType === 'impostor'
+              ? player.impostorRole !== undefined &&
+                player.impostorEliminatedRound === undefined
+              : player.role !== undefined,
         joinedForNextRound: player.joinedForNextRound ?? false,
         statement:
           status === 'waiting' || status === 'writing'
@@ -678,6 +845,14 @@ export const getRoom = query({
             : undefined,
         celebrityTurnOrder: player.celebrityTurnOrder,
         celebrityWasGuessed: player.celebrityWasGuessed,
+        impostorRole:
+          gameType === 'impostor' &&
+          (status === 'results' ||
+            status === 'finished' ||
+            player.impostorEliminatedRound !== undefined)
+            ? player.impostorRole
+            : undefined,
+        impostorEliminatedRound: player.impostorEliminatedRound,
         celebrityTarget: canSeeCelebrityTarget
           ? {
               name: celebrityTarget?.celebrityName,
@@ -687,6 +862,52 @@ export const getRoom = query({
           : undefined,
       })
     }
+
+    const impostorLastResult =
+      gameType === 'impostor' && room.impostorLastVoteRound !== undefined
+        ? {
+            round: room.impostorLastVoteRound,
+            eliminated: (room.impostorLastEliminatedPlayerIds ?? []).map(
+              (playerId) => {
+                const player = allPlayers.find((item) => item._id === playerId)
+                return {
+                  id: playerId,
+                  name: displayNameByPlayerId.get(playerId) ?? 'Player',
+                  wasImpostor: player?.impostorRole === 'impostor',
+                }
+              },
+            ),
+            voteCounts: players
+              .filter(
+                (player) =>
+                  player.impostorRole !== undefined &&
+                  (player.impostorEliminatedRound === undefined ||
+                    player.impostorEliminatedRound >=
+                      room.impostorLastVoteRound!),
+              )
+              .map((player) => ({
+                playerId: player._id,
+                name: displayNameByPlayerId.get(player._id) ?? 'Player',
+                count: lastImpostorVotes.filter(
+                  (vote) => vote.targetPlayerId === player._id,
+                ).length,
+              }))
+              .sort(
+                (a, b) => b.count - a.count || a.name.localeCompare(b.name),
+              ),
+            ballots:
+              (room.impostorVotingVisibility ??
+                DEFAULT_IMPOSTOR_VOTING_VISIBILITY) === 'revealed'
+                ? lastImpostorVotes.map((vote) => ({
+                    voterName:
+                      displayNameByPlayerId.get(vote.voterId) ?? 'Player',
+                    targetName:
+                      displayNameByPlayerId.get(vote.targetPlayerId) ??
+                      'Player',
+                  }))
+                : undefined,
+          }
+        : undefined
 
     return {
       id: room._id,
@@ -711,6 +932,37 @@ export const getRoom = query({
       currentPlayerId: currentPlayer._id,
       celebrityTurnIndex: room.celebrityTurnIndex ?? 0,
       activeCelebrityPlayerId: activeCelebrityPlayer?._id,
+      impostorCount: room.impostorCount ?? DEFAULT_IMPOSTOR_COUNT,
+      impostorVotingVisibility:
+        room.impostorVotingVisibility ?? DEFAULT_IMPOSTOR_VOTING_VISIBILITY,
+      impostorTieRule: room.impostorTieRule ?? DEFAULT_IMPOSTOR_TIE_RULE,
+      impostorRound,
+      impostorWord:
+        gameType === 'impostor' && currentPlayer.impostorRole
+          ? currentPlayer.impostorRole === 'impostor'
+            ? room.impostorDifferentWord
+            : room.impostorCommonWord
+          : undefined,
+      impostorCommonWord:
+        gameType === 'impostor' &&
+        (status === 'results' || status === 'finished')
+          ? room.impostorCommonWord
+          : undefined,
+      impostorDifferentWord:
+        gameType === 'impostor' &&
+        (status === 'results' || status === 'finished')
+          ? room.impostorDifferentWord
+          : undefined,
+      impostorVotesCast: currentImpostorVotes.length,
+      impostorEligibleVoters: players.filter(
+        (player) =>
+          player.impostorRole !== undefined &&
+          player.impostorEliminatedRound === undefined,
+      ).length,
+      impostorCurrentPlayerHasVoted: currentImpostorVotes.some(
+        (vote) => vote.voterId === currentPlayer._id,
+      ),
+      impostorLastResult,
       players: visiblePlayers,
     }
   },
@@ -719,10 +971,21 @@ export const getRoom = query({
 export const startGame = mutation({
   args: {
     roomId: v.id('rooms'),
-    gameType: v.union(v.literal('truth_or_lie'), v.literal('celebrity')),
+    gameType: v.union(
+      v.literal('truth_or_lie'),
+      v.literal('celebrity'),
+      v.literal('impostor'),
+    ),
     liarCount: v.optional(v.number()),
     writingDurationSeconds: v.optional(v.number()),
     discussionVotingDurationSeconds: v.optional(v.number()),
+    impostorCount: v.optional(v.number()),
+    impostorVotingVisibility: v.optional(
+      v.union(v.literal('anonymous'), v.literal('revealed')),
+    ),
+    impostorTieRule: v.optional(
+      v.union(v.literal('eliminate_all'), v.literal('eliminate_none')),
+    ),
   },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx)
@@ -735,6 +998,67 @@ export const startGame = mutation({
 
     const players = await getActivePlayers(ctx, room._id)
     if (players.length < 3) throw new Error('At least 3 players are required.')
+    if (args.gameType === 'impostor') {
+      const impostorCount = args.impostorCount ?? room.impostorCount ?? 1
+      if (
+        !Number.isInteger(impostorCount) ||
+        impostorCount < 1 ||
+        impostorCount >= players.length
+      ) {
+        throw new Error(
+          `Choose between 1 and ${players.length - 1} impostors for this game.`,
+        )
+      }
+      const roles = assignImpostorRoles(players.length, impostorCount)
+      const words = chooseImpostorWords(
+        IMPOSTOR_WORD_PAIRS,
+        room.impostorWordPairId,
+      )
+      await deleteImpostorVotes(ctx, room._id)
+      for (const [index, player] of players.entries()) {
+        await ctx.db.patch(player._id, {
+          role: undefined,
+          statement: undefined,
+          statementOrder: undefined,
+          hasSubmitted: false,
+          hasVoted: false,
+          joinedForNextRound: false,
+          celebrityName: undefined,
+          celebrityImageUrl: undefined,
+          celebrityImageStorageId: undefined,
+          celebrityTargetPlayerId: undefined,
+          celebrityTurnOrder: undefined,
+          celebrityWasGuessed: undefined,
+          impostorRole: roles[index],
+          impostorEliminatedRound: undefined,
+        })
+      }
+      const now = Date.now()
+      await ctx.db.patch(room._id, {
+        gameType: 'impostor',
+        status: 'impostor_playing',
+        startedAt: now,
+        phaseEndsAt: undefined,
+        celebrityTurnIndex: undefined,
+        impostorCount,
+        impostorVotingVisibility:
+          args.impostorVotingVisibility ??
+          room.impostorVotingVisibility ??
+          DEFAULT_IMPOSTOR_VOTING_VISIBILITY,
+        impostorTieRule:
+          args.impostorTieRule ??
+          room.impostorTieRule ??
+          DEFAULT_IMPOSTOR_TIE_RULE,
+        impostorRound: 1,
+        impostorWordPairId: words.pairId,
+        impostorCommonWord: words.commonWord,
+        impostorDifferentWord: words.impostorWord,
+        impostorLastVoteRound: undefined,
+        impostorLastEliminatedPlayerIds: undefined,
+        ...roomActivity(now),
+      })
+      return
+    }
     if (args.gameType === 'celebrity') {
       for (const player of players) {
         await ctx.db.patch(player._id, {
@@ -749,6 +1073,8 @@ export const startGame = mutation({
           celebrityTargetPlayerId: undefined,
           celebrityTurnOrder: undefined,
           celebrityWasGuessed: undefined,
+          impostorRole: undefined,
+          impostorEliminatedRound: undefined,
         })
       }
       await ctx.db.patch(room._id, {
@@ -757,6 +1083,9 @@ export const startGame = mutation({
         startedAt: Date.now(),
         phaseEndsAt: undefined,
         celebrityTurnIndex: 0,
+        impostorRound: undefined,
+        impostorLastVoteRound: undefined,
+        impostorLastEliminatedPlayerIds: undefined,
         ...roomActivity(),
       })
       return
@@ -794,6 +1123,8 @@ export const startGame = mutation({
         celebrityTargetPlayerId: undefined,
         celebrityTurnOrder: undefined,
         celebrityWasGuessed: undefined,
+        impostorRole: undefined,
+        impostorEliminatedRound: undefined,
       })
     }
     const now = Date.now()
@@ -806,6 +1137,9 @@ export const startGame = mutation({
       startedAt: now,
       phaseEndsAt: now + writingDurationSeconds * 1_000,
       celebrityTurnIndex: undefined,
+      impostorRound: undefined,
+      impostorLastVoteRound: undefined,
+      impostorLastEliminatedPlayerIds: undefined,
       ...roomActivity(now),
     })
   },
@@ -968,6 +1302,53 @@ export const restartRound = mutation({
       .collect()
     for (const vote of votes) await ctx.db.delete(vote._id)
 
+    if ((room.gameType ?? 'truth_or_lie') === 'impostor') {
+      const impostorCount = Math.min(
+        room.impostorCount ?? DEFAULT_IMPOSTOR_COUNT,
+        players.length - 1,
+      )
+      const roles = assignImpostorRoles(players.length, impostorCount)
+      const words = chooseImpostorWords(
+        IMPOSTOR_WORD_PAIRS,
+        room.impostorWordPairId,
+      )
+      await deleteImpostorVotes(ctx, room._id)
+      for (const [index, player] of players.entries()) {
+        await ctx.db.patch(player._id, {
+          role: undefined,
+          statement: undefined,
+          statementOrder: undefined,
+          hasSubmitted: false,
+          hasVoted: false,
+          joinedForNextRound: false,
+          celebrityName: undefined,
+          celebrityImageUrl: undefined,
+          celebrityImageStorageId: undefined,
+          celebrityTargetPlayerId: undefined,
+          celebrityTurnOrder: undefined,
+          celebrityWasGuessed: undefined,
+          impostorRole: roles[index],
+          impostorEliminatedRound: undefined,
+        })
+      }
+      const now = Date.now()
+      await ctx.db.patch(room._id, {
+        status: 'impostor_playing',
+        startedAt: now,
+        phaseEndsAt: undefined,
+        celebrityTurnIndex: undefined,
+        impostorCount,
+        impostorRound: 1,
+        impostorWordPairId: words.pairId,
+        impostorCommonWord: words.commonWord,
+        impostorDifferentWord: words.impostorWord,
+        impostorLastVoteRound: undefined,
+        impostorLastEliminatedPlayerIds: undefined,
+        ...roomActivity(now),
+      })
+      return
+    }
+
     if ((room.gameType ?? 'truth_or_lie') === 'celebrity') {
       for (const player of players) {
         await ctx.db.patch(player._id, {
@@ -982,6 +1363,8 @@ export const restartRound = mutation({
           celebrityTargetPlayerId: undefined,
           celebrityTurnOrder: undefined,
           celebrityWasGuessed: undefined,
+          impostorRole: undefined,
+          impostorEliminatedRound: undefined,
         })
       }
       await ctx.db.patch(room._id, {
@@ -1007,6 +1390,8 @@ export const restartRound = mutation({
         hasSubmitted: false,
         hasVoted: false,
         joinedForNextRound: false,
+        impostorRole: undefined,
+        impostorEliminatedRound: undefined,
       })
     }
 
@@ -1038,6 +1423,7 @@ export const returnToLobby = mutation({
       .withIndex('by_room', (q) => q.eq('roomId', room._id))
       .collect()
     for (const vote of votes) await ctx.db.delete(vote._id)
+    await deleteImpostorVotes(ctx, room._id)
 
     const players = await getActivePlayers(ctx, room._id)
     for (const player of players) {
@@ -1053,6 +1439,8 @@ export const returnToLobby = mutation({
         celebrityTargetPlayerId: undefined,
         celebrityTurnOrder: undefined,
         celebrityWasGuessed: undefined,
+        impostorRole: undefined,
+        impostorEliminatedRound: undefined,
       })
     }
     await ctx.db.patch(room._id, {
@@ -1061,6 +1449,12 @@ export const returnToLobby = mutation({
       startedAt: undefined,
       phaseEndsAt: undefined,
       celebrityTurnIndex: undefined,
+      impostorRound: undefined,
+      impostorWordPairId: undefined,
+      impostorCommonWord: undefined,
+      impostorDifferentWord: undefined,
+      impostorLastVoteRound: undefined,
+      impostorLastEliminatedPlayerIds: undefined,
       ...roomActivity(),
     })
   },
@@ -1072,6 +1466,14 @@ export const updateRoomSettings = mutation({
     maxPlayers: v.number(),
     writingDurationSeconds: v.number(),
     discussionVotingDurationSeconds: v.number(),
+    liarCount: v.optional(v.number()),
+    impostorCount: v.optional(v.number()),
+    impostorVotingVisibility: v.optional(
+      v.union(v.literal('anonymous'), v.literal('revealed')),
+    ),
+    impostorTieRule: v.optional(
+      v.union(v.literal('eliminate_all'), v.literal('eliminate_none')),
+    ),
   },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx)
@@ -1079,8 +1481,9 @@ export const updateRoomSettings = mutation({
     if (!room) throw new Error('Room not found.')
     if (room.hostId !== user._id)
       throw new Error('Only the host can change room settings.')
-    if (room.status !== 'waiting')
-      throw new Error('Settings can only be changed before the game starts.')
+    if (room.status !== 'waiting' && room.status !== 'results') {
+      throw new Error('Settings can only be changed between games.')
+    }
 
     const players = await getActivePlayers(ctx, room._id)
     if (
@@ -1097,11 +1500,38 @@ export const updateRoomSettings = mutation({
       args.writingDurationSeconds,
       args.discussionVotingDurationSeconds,
     )
+    const liarCount = args.liarCount ?? room.liarCount ?? DEFAULT_LIAR_COUNT
+    if (
+      !Number.isInteger(liarCount) ||
+      liarCount < 1 ||
+      (players.length >= 3 && liarCount >= players.length)
+    ) {
+      throw new Error(`Choose between 1 and ${players.length - 1} liars.`)
+    }
+    const impostorCount =
+      args.impostorCount ?? room.impostorCount ?? DEFAULT_IMPOSTOR_COUNT
+    if (
+      !Number.isInteger(impostorCount) ||
+      impostorCount < 1 ||
+      (players.length >= 3 && impostorCount >= players.length)
+    ) {
+      throw new Error(`Choose between 1 and ${players.length - 1} impostors.`)
+    }
 
     await ctx.db.patch(room._id, {
       maxPlayers: args.maxPlayers,
+      liarCount,
       writingDurationSeconds: args.writingDurationSeconds,
       discussionVotingDurationSeconds: args.discussionVotingDurationSeconds,
+      impostorCount,
+      impostorVotingVisibility:
+        args.impostorVotingVisibility ??
+        room.impostorVotingVisibility ??
+        DEFAULT_IMPOSTOR_VOTING_VISIBILITY,
+      impostorTieRule:
+        args.impostorTieRule ??
+        room.impostorTieRule ??
+        DEFAULT_IMPOSTOR_TIE_RULE,
       ...roomActivity(),
     })
   },
@@ -1187,6 +1617,52 @@ export const vote = mutation({
     ) {
       await finishVoting(ctx, room, players)
     }
+  },
+})
+
+export const voteImpostor = mutation({
+  args: { roomId: v.id('rooms'), targetPlayerId: v.id('players') },
+  handler: async (ctx, args) => {
+    const room = await ctx.db.get(args.roomId)
+    if (!room || room.status !== 'impostor_playing') {
+      throw new Error('Voting is closed.')
+    }
+    const { player } = await requirePlayer(ctx, args.roomId)
+    if (!player.impostorRole || player.impostorEliminatedRound !== undefined) {
+      throw new Error('Eliminated players can only watch.')
+    }
+    if (player._id === args.targetPlayerId) {
+      throw new Error('You cannot vote for yourself.')
+    }
+    const target = await ctx.db.get(args.targetPlayerId)
+    if (
+      !target ||
+      target.roomId !== room._id ||
+      target.leftAt ||
+      !target.impostorRole ||
+      target.impostorEliminatedRound !== undefined
+    ) {
+      throw new Error('That player cannot be voted for.')
+    }
+
+    const round = room.impostorRound ?? 1
+    const existing = await ctx.db
+      .query('impostorVotes')
+      .withIndex('by_room_round_and_voter', (q) =>
+        q.eq('roomId', room._id).eq('round', round).eq('voterId', player._id),
+      )
+      .unique()
+    if (existing) throw new Error('You have already voted this round.')
+
+    await ctx.db.insert('impostorVotes', {
+      roomId: room._id,
+      round,
+      voterId: player._id,
+      targetPlayerId: target._id,
+      createdAt: Date.now(),
+    })
+    await ctx.db.patch(room._id, roomActivity())
+    await finishImpostorVoting(ctx, room, await getActivePlayers(ctx, room._id))
   },
 })
 

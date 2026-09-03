@@ -7,6 +7,7 @@ export const roomStatus = v.union(
   v.literal('voting'),
   v.literal('celebrity_submitting'),
   v.literal('celebrity_guessing'),
+  v.literal('impostor_playing'),
   v.literal('results'),
   v.literal('finished'),
 )
@@ -14,6 +15,7 @@ export const roomStatus = v.union(
 export const gameType = v.union(
   v.literal('truth_or_lie'),
   v.literal('celebrity'),
+  v.literal('impostor'),
 )
 
 export default defineSchema({
@@ -47,6 +49,19 @@ export default defineSchema({
     startedAt: v.optional(v.number()),
     phaseEndsAt: v.optional(v.number()),
     celebrityTurnIndex: v.optional(v.number()),
+    impostorCount: v.optional(v.number()),
+    impostorVotingVisibility: v.optional(
+      v.union(v.literal('anonymous'), v.literal('revealed')),
+    ),
+    impostorTieRule: v.optional(
+      v.union(v.literal('eliminate_all'), v.literal('eliminate_none')),
+    ),
+    impostorRound: v.optional(v.number()),
+    impostorWordPairId: v.optional(v.string()),
+    impostorCommonWord: v.optional(v.string()),
+    impostorDifferentWord: v.optional(v.string()),
+    impostorLastVoteRound: v.optional(v.number()),
+    impostorLastEliminatedPlayerIds: v.optional(v.array(v.id('players'))),
     lastActivityAt: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
     endedAt: v.optional(v.number()),
@@ -70,6 +85,10 @@ export default defineSchema({
     celebrityTargetPlayerId: v.optional(v.id('players')),
     celebrityTurnOrder: v.optional(v.number()),
     celebrityWasGuessed: v.optional(v.boolean()),
+    impostorRole: v.optional(
+      v.union(v.literal('player'), v.literal('impostor')),
+    ),
+    impostorEliminatedRound: v.optional(v.number()),
     leftAt: v.optional(v.number()),
     kickedAt: v.optional(v.number()),
     createdAt: v.number(),
@@ -86,4 +105,15 @@ export default defineSchema({
   })
     .index('by_room', ['roomId'])
     .index('by_room_and_voter', ['roomId', 'voterId']),
+
+  impostorVotes: defineTable({
+    roomId: v.id('rooms'),
+    round: v.number(),
+    voterId: v.id('players'),
+    targetPlayerId: v.id('players'),
+    createdAt: v.number(),
+  })
+    .index('by_room', ['roomId'])
+    .index('by_room_and_round', ['roomId', 'round'])
+    .index('by_room_round_and_voter', ['roomId', 'round', 'voterId']),
 })

@@ -8,6 +8,7 @@ import {
   BadgeQuestionMark,
   Crown,
   DoorOpen,
+  Fingerprint,
   LoaderCircle,
   LockKeyhole,
   LogOut,
@@ -36,7 +37,7 @@ import { useFarebiAuth } from '@/lib/auth-client'
 import { cn } from '@/lib/utils'
 import { isConvexConfigured } from '@/providers/app-provider'
 
-type GameType = 'truth_or_lie' | 'celebrity'
+type GameType = 'truth_or_lie' | 'celebrity' | 'impostor'
 
 const GAMES = [
   {
@@ -56,6 +57,15 @@ const GAMES = [
     description:
       'Tell a story, blend in with the truth-tellers, then find out who fooled the room.',
     accent: 'coral',
+  },
+  {
+    id: 'impostor' as const,
+    number: '03',
+    eyebrow: '3–20 players',
+    title: 'Impostor',
+    description:
+      'Everyone gets a word. Someone gets a different one. Talk, suspect, vote them out.',
+    accent: 'blue',
   },
 ] as const
 
@@ -128,7 +138,11 @@ function CurrentRoomCard() {
   if (!room) return null
 
   const gameName =
-    room.gameType === 'celebrity' ? 'Who’s That?' : 'Truth or Lie'
+    room.gameType === 'celebrity'
+      ? 'Who’s That?'
+      : room.gameType === 'impostor'
+        ? 'Impostor'
+        : 'Truth or Lie'
   const status =
     room.status === 'voting'
       ? 'Discuss & vote'
@@ -136,7 +150,9 @@ function CurrentRoomCard() {
         ? 'Pick a celebrity'
         : room.status === 'celebrity_guessing'
           ? 'Guessing'
-          : room.status
+          : room.status === 'impostor_playing'
+            ? 'Playing & voting'
+            : room.status
 
   return (
     <section className="relative mb-12 overflow-hidden rounded-[1.5rem] border border-[#d9ff43]/35 bg-[#171b11] p-5 shadow-[6px_6px_0_rgba(255,116,95,0.75)] sm:flex sm:items-center sm:justify-between sm:gap-8 sm:p-6">
@@ -201,7 +217,9 @@ function GameShelf({
               'group relative flex min-h-[340px] flex-col overflow-hidden rounded-[1.75rem] border p-6 sm:p-8',
               game.accent === 'lime'
                 ? 'border-[#d9ff43]/35 bg-[#d9ff43] text-[#11130d]'
-                : 'border-[#ff745f]/30 bg-[#211a19]',
+                : game.accent === 'blue'
+                  ? 'border-[#78a6ff]/35 bg-[#111b2e]'
+                  : 'border-[#ff745f]/30 bg-[#211a19]',
             )}
           >
             <div className="flex items-start justify-between gap-4">
@@ -210,15 +228,24 @@ function GameShelf({
                   'font-mono text-xs font-bold uppercase tracking-[0.2em]',
                   game.accent === 'lime'
                     ? 'text-[#11130d]/60'
-                    : 'text-[#ff8a76]',
+                    : game.accent === 'blue'
+                      ? 'text-[#8eb4ff]'
+                      : 'text-[#ff8a76]',
                 )}
               >
                 {game.number} · {game.eyebrow}
               </span>
-              <BadgeQuestionMark
-                strokeWidth={1.5}
-                className="size-12 rotate-6 opacity-70 transition-transform duration-300 group-hover:rotate-[-4deg] sm:size-16"
-              />
+              {game.id === 'impostor' ? (
+                <Fingerprint
+                  strokeWidth={1.35}
+                  className="size-12 rotate-6 text-[#8eb4ff] opacity-80 transition-transform duration-300 group-hover:rotate-[-4deg] sm:size-16"
+                />
+              ) : (
+                <BadgeQuestionMark
+                  strokeWidth={1.5}
+                  className="size-12 rotate-6 opacity-70 transition-transform duration-300 group-hover:rotate-[-4deg] sm:size-16"
+                />
+              )}
             </div>
             <div className="mt-auto pt-12">
               <h2 className="farebi-display text-4xl font-black tracking-[-0.04em] sm:text-5xl">
@@ -229,7 +256,9 @@ function GameShelf({
                   'mt-3 max-w-md leading-6',
                   game.accent === 'lime'
                     ? 'text-[#11130d]/70'
-                    : 'text-muted-foreground',
+                    : game.accent === 'blue'
+                      ? 'text-[#b8c9e8]'
+                      : 'text-muted-foreground',
                 )}
               >
                 {game.description}
@@ -250,6 +279,8 @@ function GameShelf({
                   className={cn(
                     game.accent === 'lime' &&
                       'border-[#11130d]/25 bg-transparent text-[#11130d] hover:bg-[#11130d]/10 hover:text-[#11130d]',
+                    game.accent === 'blue' &&
+                      'bg-[#8eb4ff] text-[#0c1424] hover:bg-[#a9c5ff]',
                   )}
                   onClick={() => onChooseMultiplayer(game.id)}
                 >
@@ -260,7 +291,7 @@ function GameShelf({
           </article>
         ))}
 
-        <article className="flex min-h-44 items-center justify-between gap-6 rounded-[1.75rem] border border-dashed border-white/15 bg-white/[0.025] p-6 text-muted-foreground lg:col-span-2 sm:p-8">
+        <article className="flex min-h-44 items-center justify-between gap-6 rounded-[1.75rem] border border-dashed border-white/15 bg-white/[0.025] p-6 text-muted-foreground sm:p-8">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.22em]">
               Next in the deck
@@ -302,19 +333,29 @@ function RoomSetup({
           'relative overflow-hidden rounded-[1.75rem] border bg-card/90 p-6 shadow-2xl shadow-black/25 sm:p-9',
           game.accent === 'lime'
             ? 'border-[#d9ff43]/30'
-            : 'border-[#ff765f]/30',
+            : game.accent === 'blue'
+              ? 'border-[#78a6ff]/30'
+              : 'border-[#ff765f]/30',
         )}
       >
         <div
           className={cn(
             'pointer-events-none absolute -right-12 -top-12 size-40 rotate-12 rounded-[2.5rem] opacity-[0.07]',
-            game.accent === 'lime' ? 'bg-[#d9ff43]' : 'bg-[#ff765f]',
+            game.accent === 'lime'
+              ? 'bg-[#d9ff43]'
+              : game.accent === 'blue'
+                ? 'bg-[#78a6ff]'
+                : 'bg-[#ff765f]',
           )}
         />
         <p
           className={cn(
             'relative font-mono text-xs font-bold uppercase tracking-[0.22em]',
-            game.accent === 'lime' ? 'text-[#d9ff43]' : 'text-[#ff8a76]',
+            game.accent === 'lime'
+              ? 'text-[#d9ff43]'
+              : game.accent === 'blue'
+                ? 'text-[#8eb4ff]'
+                : 'text-[#ff8a76]',
           )}
         >
           {game.eyebrow}

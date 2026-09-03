@@ -10,8 +10,11 @@ import {
   Clock3,
   Crown,
   DoorOpen,
+  Eye,
+  EyeOff,
   ExternalLink,
   ImagePlus,
+  Fingerprint,
   Link2,
   LoaderCircle,
   Plus,
@@ -19,6 +22,7 @@ import {
   RotateCcw,
   Search,
   Send,
+  Skull,
   SlidersHorizontal,
   Sparkles,
   UserMinus,
@@ -83,6 +87,7 @@ import { isConvexConfigured } from '@/providers/app-provider'
 type RoomQueryResult = FunctionReturnType<typeof api.rooms.getRoom>
 type RoomState = Extract<NonNullable<RoomQueryResult>, { id: unknown }>
 type Player = RoomState['players'][number]
+type GameType = RoomState['gameType']
 
 function getRoomLink(code: string) {
   return `${window.location.origin}/room/${encodeURIComponent(code)}`
@@ -92,6 +97,7 @@ function roomStatusLabel(status: RoomState['status']) {
   if (status === 'voting') return 'Discuss & vote'
   if (status === 'celebrity_submitting') return 'Pick a celebrity'
   if (status === 'celebrity_guessing') return 'Guessing'
+  if (status === 'impostor_playing') return 'Playing & voting'
   if (status === 'finished') return 'Ended'
   return status
 }
@@ -102,6 +108,9 @@ function adminPlayerStatus(room: RoomState, player: Player) {
     return player.hasSubmitted ? 'Ready' : 'Waiting'
   }
   if (room.status === 'voting') return player.hasVoted ? 'Voted' : 'Waiting'
+  if (room.status === 'impostor_playing') {
+    return player.isPlaying ? 'Playing' : 'Eliminated'
+  }
   if (
     room.status === 'celebrity_guessing' &&
     room.activeCelebrityPlayerId === player.id
@@ -368,6 +377,9 @@ function ConnectedRoom({ code }: { code: string }) {
             {room.status === 'celebrity_guessing' ? (
               <CelebrityGuessing room={room} />
             ) : null}
+            {room.status === 'impostor_playing' ? (
+              <ImpostorGame room={room} />
+            ) : null}
           </>
         )}
         {room.status === 'results' ? <Results room={room} /> : null}
@@ -489,6 +501,19 @@ function RoomExitControl({ room }: { room: RoomState }) {
   )
 }
 
+type ImpostorVotingVisibility = 'anonymous' | 'revealed'
+type ImpostorTieRule = 'eliminate_all' | 'eliminate_none'
+
+type AdminSettingsValue = {
+  maxPlayers: number
+  liarCount: number
+  writingDurationMinutes: number
+  discussionVotingDurationMinutes: number
+  impostorCount: number
+  impostorVotingVisibility: ImpostorVotingVisibility
+  impostorTieRule: ImpostorTieRule
+}
+
 function AdminControls({ room }: { room: RoomState }) {
   const updateRoomSettings = useMutation(api.rooms.updateRoomSettings)
   const endPhaseEarly = useMutation(api.rooms.endPhaseEarly)
@@ -499,10 +524,14 @@ function AdminControls({ room }: { room: RoomState }) {
   const [kickingPlayerId, setKickingPlayerId] = useState<Id<'players'> | null>(
     null,
   )
-  const [settings, setSettings] = useState(() => ({
+  const [settings, setSettings] = useState<AdminSettingsValue>(() => ({
     maxPlayers: room.maxPlayers,
+    liarCount: room.liarCount,
     writingDurationMinutes: room.writingDurationSeconds / 60,
     discussionVotingDurationMinutes: room.discussionVotingDurationSeconds / 60,
+    impostorCount: room.impostorCount,
+    impostorVotingVisibility: room.impostorVotingVisibility,
+    impostorTieRule: room.impostorTieRule,
   }))
 
   function handleOpenChange(nextOpen: boolean) {
@@ -510,9 +539,13 @@ function AdminControls({ room }: { room: RoomState }) {
     if (nextOpen) {
       setSettings({
         maxPlayers: room.maxPlayers,
+        liarCount: room.liarCount,
         writingDurationMinutes: room.writingDurationSeconds / 60,
         discussionVotingDurationMinutes:
           room.discussionVotingDurationSeconds / 60,
+        impostorCount: room.impostorCount,
+        impostorVotingVisibility: room.impostorVotingVisibility,
+        impostorTieRule: room.impostorTieRule,
       })
     }
   }
@@ -523,12 +556,16 @@ function AdminControls({ room }: { room: RoomState }) {
       await updateRoomSettings({
         roomId: room.id,
         maxPlayers: settings.maxPlayers,
+        liarCount: settings.liarCount,
         writingDurationSeconds: Math.round(
           settings.writingDurationMinutes * 60,
         ),
         discussionVotingDurationSeconds: Math.round(
           settings.discussionVotingDurationMinutes * 60,
         ),
+        impostorCount: settings.impostorCount,
+        impostorVotingVisibility: settings.impostorVotingVisibility,
+        impostorTieRule: settings.impostorTieRule,
       })
       toast.success('Room settings saved.')
       setOpen(false)
@@ -591,6 +628,8 @@ function AdminControls({ room }: { room: RoomState }) {
       : room.status === 'voting'
         ? 'End discussion/voting and show results'
         : null
+  const settingsEditable =
+    room.status === 'waiting' || room.status === 'results'
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -603,13 +642,13 @@ function AdminControls({ room }: { room: RoomState }) {
         <SheetHeader>
           <SheetTitle>Host controls</SheetTitle>
           <SheetDescription>
-            {room.status === 'waiting'
-              ? 'Set the room capacity and how long each phase lasts.'
+            {settingsEditable
+              ? 'Set up the room before the next game begins.'
               : `Manage the current ${roomStatusLabel(room.status)} phase.`}
           </SheetDescription>
         </SheetHeader>
 
-        {room.status === 'waiting' ? (
+        {settingsEditable ? (
           <div className="mt-8 grid gap-5">
             <NumberSetting
               label="Maximum players"
@@ -621,34 +660,54 @@ function AdminControls({ room }: { room: RoomState }) {
                 setSettings((current) => ({ ...current, maxPlayers }))
               }
             />
-            <NumberSetting
-              label="Writing time"
-              value={settings.writingDurationMinutes}
-              minimum={0.5}
-              maximum={30}
-              step={0.1}
-              suffix="minutes"
-              onChange={(writingDurationMinutes) =>
-                setSettings((current) => ({
-                  ...current,
-                  writingDurationMinutes,
-                }))
-              }
-            />
-            <NumberSetting
-              label="Discussion/voting time"
-              value={settings.discussionVotingDurationMinutes}
-              minimum={0.5}
-              maximum={30}
-              step={0.1}
-              suffix="minutes"
-              onChange={(discussionVotingDurationMinutes) =>
-                setSettings((current) => ({
-                  ...current,
-                  discussionVotingDurationMinutes,
-                }))
-              }
-            />
+            {room.gameType === 'impostor' ? (
+              <ImpostorSettings
+                playerCount={room.players.length}
+                settings={settings}
+                onChange={setSettings}
+              />
+            ) : room.gameType === 'truth_or_lie' ? (
+              <>
+                <NumberSetting
+                  label="Number of liars"
+                  value={settings.liarCount}
+                  minimum={1}
+                  maximum={Math.max(1, room.players.length - 1)}
+                  suffix={settings.liarCount === 1 ? 'liar' : 'liars'}
+                  onChange={(liarCount) =>
+                    setSettings((current) => ({ ...current, liarCount }))
+                  }
+                />
+                <NumberSetting
+                  label="Writing time"
+                  value={settings.writingDurationMinutes}
+                  minimum={0.5}
+                  maximum={30}
+                  step={0.1}
+                  suffix="minutes"
+                  onChange={(writingDurationMinutes) =>
+                    setSettings((current) => ({
+                      ...current,
+                      writingDurationMinutes,
+                    }))
+                  }
+                />
+                <NumberSetting
+                  label="Discussion/voting time"
+                  value={settings.discussionVotingDurationMinutes}
+                  minimum={0.5}
+                  maximum={30}
+                  step={0.1}
+                  suffix="minutes"
+                  onChange={(discussionVotingDurationMinutes) =>
+                    setSettings((current) => ({
+                      ...current,
+                      discussionVotingDurationMinutes,
+                    }))
+                  }
+                />
+              </>
+            ) : null}
             <SheetFooter>
               <Button disabled={pending} onClick={() => void saveSettings()}>
                 {pending ? 'Saving…' : 'Save settings'}
@@ -656,55 +715,56 @@ function AdminControls({ room }: { room: RoomState }) {
             </SheetFooter>
           </div>
         ) : phaseAction ? (
-          <div className="mt-8 rounded-xl border border-border bg-card p-5">
-            <p className="text-sm font-medium">
-              {roomStatusLabel(room.status)} in progress
-            </p>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Add more time for everyone, or move the room forward early.
-            </p>
-            <Button
-              variant="outline"
-              className="mt-5 w-full"
-              disabled={pending}
-              onClick={() => void extendPhase()}
-            >
-              <Plus /> +30 sec
-            </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="destructive"
-                  className="mt-3 w-full"
-                  disabled={pending}
-                >
-                  {phaseAction}
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>{phaseAction}?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Everyone will move forward immediately. This cannot be
-                    undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Keep playing</AlertDialogCancel>
-                  <AlertDialogAction
+          <div>
+            <LockedGameSettings room={room} />
+            <div className="mt-5 rounded-xl border border-border bg-card p-5">
+              <p className="text-sm font-medium">
+                {roomStatusLabel(room.status)} in progress
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Add more time for everyone, or move the room forward early.
+              </p>
+              <Button
+                variant="outline"
+                className="mt-5 w-full"
+                disabled={pending}
+                onClick={() => void extendPhase()}
+              >
+                <Plus /> +30 sec
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    className="mt-3 w-full"
                     disabled={pending}
-                    onClick={() => void endEarly()}
                   >
-                    {pending ? 'Ending…' : 'Confirm'}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                    {phaseAction}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{phaseAction}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Everyone will move forward immediately. This cannot be
+                      undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Keep playing</AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={pending}
+                      onClick={() => void endEarly()}
+                    >
+                      {pending ? 'Ending…' : 'Confirm'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </div>
         ) : (
-          <p className="mt-8 text-sm text-muted-foreground">
-            There are no controls for this phase.
-          </p>
+          <LockedGameSettings room={room} />
         )}
 
         <div className="mt-8 border-t border-white/10 pt-7">
@@ -806,6 +866,166 @@ function AdminControls({ room }: { room: RoomState }) {
   )
 }
 
+function ImpostorSettings({
+  playerCount,
+  settings,
+  onChange,
+  disabled = false,
+}: {
+  playerCount: number
+  settings: Pick<
+    AdminSettingsValue,
+    'impostorCount' | 'impostorVotingVisibility' | 'impostorTieRule'
+  >
+  onChange: (
+    update: (current: AdminSettingsValue) => AdminSettingsValue,
+  ) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="grid gap-5">
+      <NumberSetting
+        label="Number of impostors"
+        value={settings.impostorCount}
+        minimum={1}
+        maximum={Math.max(1, playerCount - 1)}
+        suffix={settings.impostorCount === 1 ? 'impostor' : 'impostors'}
+        disabled={disabled}
+        onChange={(impostorCount) =>
+          onChange((current) => ({ ...current, impostorCount }))
+        }
+      />
+      <ChoiceSetting
+        label="Voting receipts"
+        value={settings.impostorVotingVisibility}
+        disabled={disabled}
+        options={[
+          { value: 'anonymous', label: 'Anonymous' },
+          { value: 'revealed', label: 'Show who voted' },
+        ]}
+        onChange={(impostorVotingVisibility) =>
+          onChange((current) => ({ ...current, impostorVotingVisibility }))
+        }
+      />
+      <ChoiceSetting
+        label="If the vote is tied"
+        value={settings.impostorTieRule}
+        disabled={disabled}
+        options={[
+          { value: 'eliminate_none', label: 'Nobody goes out' },
+          { value: 'eliminate_all', label: 'All tied go out' },
+        ]}
+        onChange={(impostorTieRule) =>
+          onChange((current) => ({ ...current, impostorTieRule }))
+        }
+      />
+    </div>
+  )
+}
+
+function LockedGameSettings({ room }: { room: RoomState }) {
+  return (
+    <div className="mt-8 grid gap-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium">Game settings</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Visible throughout the game and locked until it ends.
+          </p>
+        </div>
+        <Badge variant="outline">Locked</Badge>
+      </div>
+      <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+        {room.gameType === 'impostor' ? (
+          <div className="grid gap-3 text-sm">
+            <SettingSummary
+              label="Impostors"
+              value={String(room.impostorCount)}
+            />
+            <SettingSummary
+              label="Voting receipts"
+              value={
+                room.impostorVotingVisibility === 'revealed'
+                  ? 'Show who voted'
+                  : 'Anonymous'
+              }
+            />
+            <SettingSummary
+              label="Tied vote"
+              value={
+                room.impostorTieRule === 'eliminate_all'
+                  ? 'All tied go out'
+                  : 'Nobody goes out'
+              }
+            />
+          </div>
+        ) : room.gameType === 'truth_or_lie' ? (
+          <div className="grid gap-3 text-sm">
+            <SettingSummary label="Liars" value={String(room.liarCount)} />
+            <SettingSummary
+              label="Writing"
+              value={`${room.writingDurationSeconds / 60} min`}
+            />
+            <SettingSummary
+              label="Discussion & voting"
+              value={`${room.discussionVotingDurationSeconds / 60} min`}
+            />
+          </div>
+        ) : (
+          <SettingSummary label="Mode" value="Alphabetical turns" />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SettingSummary({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-right font-medium">{value}</span>
+    </div>
+  )
+}
+
+function ChoiceSetting<TValue extends string>({
+  label,
+  value,
+  options,
+  disabled = false,
+  onChange,
+}: {
+  label: string
+  value: TValue
+  options: Array<{ value: TValue; label: string }>
+  disabled?: boolean
+  onChange: (value: TValue) => void
+}) {
+  return (
+    <fieldset disabled={disabled} className="grid gap-2">
+      <legend className="text-sm font-medium">{label}</legend>
+      <div className="grid grid-cols-2 gap-2">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={value === option.value}
+            className={cn(
+              'rounded-xl border px-3 py-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-65',
+              value === option.value
+                ? 'border-[#8eb4ff]/60 bg-[#8eb4ff] text-[#0c1424]'
+                : 'border-white/10 bg-white/[0.025] text-muted-foreground hover:border-white/25 hover:text-foreground',
+            )}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 function NumberSetting({
   label,
   value,
@@ -813,6 +1033,7 @@ function NumberSetting({
   maximum,
   step = 1,
   suffix,
+  disabled = false,
   onChange,
 }: {
   label: string
@@ -821,13 +1042,16 @@ function NumberSetting({
   maximum: number
   step?: number
   suffix: string
+  disabled?: boolean
   onChange: (value: number) => void
 }) {
   return (
     <label className="grid gap-2 text-sm font-medium">
       <span className="flex items-center justify-between">
         {label}
-        <span className="font-normal text-muted-foreground">{suffix}</span>
+        <span className="font-normal text-muted-foreground">
+          {value} {suffix}
+        </span>
       </span>
       <Input
         type="number"
@@ -836,6 +1060,7 @@ function NumberSetting({
         max={maximum}
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
       />
       <span className="text-xs font-normal text-muted-foreground">
@@ -879,13 +1104,16 @@ function Lobby({ room }: { room: RoomState }) {
   const [setupOpen, setSetupOpen] = useState(false)
   const [pending, setPending] = useState(false)
   const lockedGameType = room.gameTypeLocked ? room.gameType : undefined
-  const [gameType, setGameType] = useState<'truth_or_lie' | 'celebrity' | null>(
+  const [gameType, setGameType] = useState<GameType | null>(
     lockedGameType ?? null,
   )
   const [settings, setSettings] = useState(() => ({
     liarCount: room.liarCount,
     writingDurationMinutes: room.writingDurationSeconds / 60,
     discussionVotingDurationMinutes: room.discussionVotingDurationSeconds / 60,
+    impostorCount: room.impostorCount,
+    impostorVotingVisibility: room.impostorVotingVisibility,
+    impostorTieRule: room.impostorTieRule,
   }))
 
   function handleSetupOpen(nextOpen: boolean) {
@@ -896,6 +1124,12 @@ function Lobby({ room }: { room: RoomState }) {
         writingDurationMinutes: room.writingDurationSeconds / 60,
         discussionVotingDurationMinutes:
           room.discussionVotingDurationSeconds / 60,
+        impostorCount: Math.min(
+          room.impostorCount,
+          Math.max(1, room.players.length - 1),
+        ),
+        impostorVotingVisibility: room.impostorVotingVisibility,
+        impostorTieRule: room.impostorTieRule,
       })
     }
   }
@@ -906,7 +1140,7 @@ function Lobby({ room }: { room: RoomState }) {
       await startGame({
         roomId: room.id,
         gameType: gameType ?? 'truth_or_lie',
-        ...(gameType !== 'celebrity'
+        ...(gameType === 'truth_or_lie'
           ? {
               liarCount: settings.liarCount,
               writingDurationSeconds: Math.round(
@@ -916,7 +1150,13 @@ function Lobby({ room }: { room: RoomState }) {
                 settings.discussionVotingDurationMinutes * 60,
               ),
             }
-          : {}),
+          : gameType === 'impostor'
+            ? {
+                impostorCount: settings.impostorCount,
+                impostorVotingVisibility: settings.impostorVotingVisibility,
+                impostorTieRule: settings.impostorTieRule,
+              }
+            : {}),
       })
       setSetupOpen(false)
     } catch (error) {
@@ -1026,6 +1266,9 @@ type RoundSetupSettings = {
   liarCount: number
   writingDurationMinutes: number
   discussionVotingDurationMinutes: number
+  impostorCount: number
+  impostorVotingVisibility: ImpostorVotingVisibility
+  impostorTieRule: ImpostorTieRule
 }
 
 function useDesktopDialog() {
@@ -1061,11 +1304,11 @@ function StartGameSetup({
   open: boolean
   pending: boolean
   playerCount: number
-  gameType: 'truth_or_lie' | 'celebrity' | null
+  gameType: GameType | null
   settings: RoundSetupSettings
-  fixedGameType?: 'truth_or_lie' | 'celebrity'
+  fixedGameType?: GameType
   onOpenChange: (open: boolean) => void
-  onGameTypeChange: (gameType: 'truth_or_lie' | 'celebrity') => void
+  onGameTypeChange: (gameType: GameType) => void
   onSettingsChange: (settings: RoundSetupSettings) => void
   onConfirm: () => void
 }) {
@@ -1075,9 +1318,11 @@ function StartGameSetup({
       <Sparkles />
       {fixedGameType === 'celebrity'
         ? 'Start Who’s That?'
-        : fixedGameType === 'truth_or_lie'
-          ? 'Set up Truth or Lie'
-          : 'Choose a game'}
+        : fixedGameType === 'impostor'
+          ? 'Set up Impostor'
+          : fixedGameType === 'truth_or_lie'
+            ? 'Set up Truth or Lie'
+            : 'Choose a game'}
     </Button>
   )
   const content = (
@@ -1146,10 +1391,10 @@ function RoundSetupForm({
 }: {
   pending: boolean
   playerCount: number
-  gameType: 'truth_or_lie' | 'celebrity' | null
+  gameType: GameType | null
   settings: RoundSetupSettings
-  fixedGameType?: 'truth_or_lie' | 'celebrity'
-  onGameTypeChange: (gameType: 'truth_or_lie' | 'celebrity') => void
+  fixedGameType?: GameType
+  onGameTypeChange: (gameType: GameType) => void
   onSettingsChange: (settings: RoundSetupSettings) => void
   onConfirm: () => void
 }) {
@@ -1158,7 +1403,7 @@ function RoundSetupForm({
   return (
     <div className="mt-7 grid gap-5 sm:mt-0">
       {!fixedGameType ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
           <GameChoice
             selected={gameType === 'truth_or_lie'}
             icon={<UserRoundCheck className="size-5" />}
@@ -1172,6 +1417,13 @@ function RoundSetupForm({
             title="Who’s That?"
             description="Pick famous faces and take turns guessing aloud."
             onClick={() => onGameTypeChange('celebrity')}
+          />
+          <GameChoice
+            selected={gameType === 'impostor'}
+            icon={<Fingerprint className="size-5" />}
+            title="Impostor"
+            description="Share spoken clues and vote out the odd word."
+            onClick={() => onGameTypeChange('impostor')}
           />
         </div>
       ) : null}
@@ -1226,6 +1478,45 @@ function RoundSetupForm({
             suffix="minutes"
             onChange={(discussionVotingDurationMinutes) =>
               onSettingsChange({ ...settings, discussionVotingDurationMinutes })
+            }
+          />
+        </>
+      ) : selectedGame === 'impostor' ? (
+        <>
+          <div className="rounded-2xl border border-[#8eb4ff]/25 bg-[#8eb4ff]/[0.07] p-4 text-sm leading-6 text-white/75">
+            Most players get one word. The impostors get a related word. Give
+            one-word clues aloud, then vote whenever the group is ready.
+          </div>
+          <NumberSetting
+            label="Number of impostors"
+            value={settings.impostorCount}
+            minimum={1}
+            maximum={Math.max(1, playerCount - 1)}
+            suffix={settings.impostorCount === 1 ? 'impostor' : 'impostors'}
+            onChange={(impostorCount) =>
+              onSettingsChange({ ...settings, impostorCount })
+            }
+          />
+          <ChoiceSetting
+            label="Voting receipts"
+            value={settings.impostorVotingVisibility}
+            options={[
+              { value: 'anonymous', label: 'Anonymous' },
+              { value: 'revealed', label: 'Show who voted' },
+            ]}
+            onChange={(impostorVotingVisibility) =>
+              onSettingsChange({ ...settings, impostorVotingVisibility })
+            }
+          />
+          <ChoiceSetting
+            label="If the vote is tied"
+            value={settings.impostorTieRule}
+            options={[
+              { value: 'eliminate_none', label: 'Nobody goes out' },
+              { value: 'eliminate_all', label: 'All tied go out' },
+            ]}
+            onChange={(impostorTieRule) =>
+              onSettingsChange({ ...settings, impostorTieRule })
             }
           />
         </>
@@ -1727,6 +2018,291 @@ function CelebrityGuessing({ room }: { room: RoomState }) {
   )
 }
 
+function ImpostorGame({ room }: { room: RoomState }) {
+  const voteImpostor = useMutation(api.rooms.voteImpostor)
+  const current = room.players.find((player) => player.isCurrent)
+  const activePlayers = room.players.filter((player) => player.isPlaying)
+  const [selected, setSelected] = useState<Id<'players'> | null>(null)
+  const [pending, setPending] = useState(false)
+  const [wordVisible, setWordVisible] = useState(false)
+
+  useEffect(() => {
+    setSelected(null)
+    setWordVisible(false)
+  }, [room.impostorRound])
+
+  async function submitVote() {
+    if (!selected) return
+    setPending(true)
+    try {
+      await voteImpostor({ roomId: room.id, targetPlayerId: selected })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not vote.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <section className="mx-auto max-w-4xl">
+      <div className="text-center">
+        <Badge
+          variant="outline"
+          className="border-[#8eb4ff]/35 bg-[#8eb4ff]/10 font-mono uppercase tracking-[0.16em] text-[#9dbdff]"
+        >
+          Round {room.impostorRound}
+        </Badge>
+        <h1 className="farebi-display mt-5 text-5xl font-black leading-[0.92] tracking-[-0.055em] sm:text-7xl">
+          Find the odd word.
+        </h1>
+        <p className="mx-auto mt-4 max-w-xl leading-7 text-muted-foreground">
+          Say one related word aloud. Listen carefully. Vote whenever the group
+          is ready.
+        </p>
+      </div>
+
+      {room.impostorLastResult ? (
+        <ImpostorRoundResult result={room.impostorLastResult} />
+      ) : null}
+
+      <div className="mt-9 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="grid content-start gap-5">
+          {current?.isPlaying ? (
+            <div className="relative overflow-hidden rounded-[1.75rem] border border-[#8eb4ff]/30 bg-[#111b2e] p-6 shadow-[7px_7px_0_rgba(142,180,255,0.5)] sm:p-7">
+              <Fingerprint className="absolute -right-7 -top-8 size-36 rotate-12 text-[#8eb4ff]/[0.07]" />
+              <div className="relative flex items-center justify-between gap-3">
+                <p className="font-mono text-[11px] font-black uppercase tracking-[0.2em] text-[#9dbdff]">
+                  Your secret word
+                </p>
+                <EyeOff className="size-4 text-[#9dbdff]/70" />
+              </div>
+              {wordVisible ? (
+                <div className="relative mt-8">
+                  <p className="farebi-display break-words text-5xl font-black tracking-[-0.05em] text-white sm:text-6xl">
+                    {room.impostorWord}
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="mt-8 border-[#8eb4ff]/25 bg-transparent"
+                    onClick={() => setWordVisible(false)}
+                  >
+                    <EyeOff /> Hide word
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="relative mt-7 grid min-h-40 w-full place-items-center rounded-2xl border border-dashed border-[#8eb4ff]/30 bg-black/15 px-5 text-center transition-colors hover:border-[#8eb4ff]/60 hover:bg-[#8eb4ff]/[0.06]"
+                  onClick={() => setWordVisible(true)}
+                >
+                  <span>
+                    <Eye className="mx-auto size-6 text-[#9dbdff]" />
+                    <span className="mt-3 block font-bold">Tap to reveal</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      Keep this side of the screen private
+                    </span>
+                  </span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.035] p-7 text-center">
+              <Skull className="mx-auto size-8 text-[#ff9b8a]" />
+              <h2 className="farebi-display mt-4 text-3xl font-black">
+                You’re out.
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Watch the clues and votes, but sit out the rest of this game.
+              </p>
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-sm text-muted-foreground">
+                Players still in
+              </span>
+              <strong className="font-mono text-[#9dbdff]">
+                {activePlayers.length}
+              </strong>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {room.players.map((player) => (
+                <Badge
+                  key={player.id}
+                  variant="outline"
+                  className={cn(
+                    'border-white/10',
+                    !player.isPlaying && 'opacity-45 line-through',
+                  )}
+                >
+                  {player.name ?? 'Player'}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-[1.75rem] border border-white/10 bg-[#171a14]/90 p-6 sm:p-7">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="font-mono text-[11px] font-black uppercase tracking-[0.18em] text-[#ff9b8a]">
+                Open ballot
+              </p>
+              <h2 className="farebi-display mt-2 text-3xl font-black">
+                Who has the odd word?
+              </h2>
+            </div>
+            <span className="shrink-0 rounded-full bg-white/[0.05] px-3 py-1.5 font-mono text-xs text-muted-foreground">
+              {room.impostorVotesCast}/{room.impostorEligibleVoters}
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Every active player must vote. Choices and counts stay hidden until
+            the round closes.
+          </p>
+
+          {!current?.isPlaying ? (
+            <div className="mt-6 rounded-2xl border border-dashed border-white/10 px-5 py-8 text-center text-sm text-muted-foreground">
+              Eliminated players cannot vote.
+            </div>
+          ) : room.impostorCurrentPlayerHasVoted ? (
+            <div className="mt-6 rounded-2xl border border-[#8eb4ff]/25 bg-[#8eb4ff]/[0.06] px-5 py-8 text-center">
+              <Check className="mx-auto size-6 text-[#9dbdff]" />
+              <p className="mt-3 font-bold">Vote locked</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Waiting for everyone else.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="mt-6 grid gap-2 sm:grid-cols-2">
+                {activePlayers
+                  .filter((player) => !player.isCurrent)
+                  .map((player) => (
+                    <button
+                      key={player.id}
+                      type="button"
+                      aria-pressed={selected === player.id}
+                      disabled={pending}
+                      className={cn(
+                        'flex min-h-14 items-center gap-3 rounded-2xl border px-4 text-left transition-all disabled:opacity-50',
+                        selected === player.id
+                          ? 'translate-x-1 border-[#8eb4ff] bg-[#8eb4ff] text-[#0c1424] shadow-[-4px_4px_0_rgba(255,118,95,0.8)]'
+                          : 'border-white/10 bg-white/[0.025] hover:border-[#8eb4ff]/40',
+                      )}
+                      onClick={() => setSelected(player.id)}
+                    >
+                      <span
+                        className={cn(
+                          'grid size-8 place-items-center rounded-xl text-xs font-black',
+                          selected === player.id
+                            ? 'bg-[#0c1424] text-[#8eb4ff]'
+                            : 'bg-[#8eb4ff]/10 text-[#9dbdff]',
+                        )}
+                      >
+                        {(player.name ?? 'P').slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="font-medium">
+                        {player.name ?? 'Player'}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+              <Button
+                size="lg"
+                className="mt-4 w-full bg-[#8eb4ff] text-[#0c1424] hover:bg-[#a9c5ff]"
+                disabled={!selected || pending}
+                onClick={() => void submitVote()}
+              >
+                {pending ? 'Locking vote…' : 'Lock vote'}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ImpostorRoundResult({
+  result,
+}: {
+  result: NonNullable<RoomState['impostorLastResult']>
+}) {
+  return (
+    <div className="mt-8 overflow-hidden rounded-[1.5rem] border border-[#ff765f]/25 bg-[#211a19]">
+      <div className="border-b border-white/10 px-5 py-5 sm:flex sm:items-center sm:justify-between sm:gap-5">
+        <div>
+          <p className="font-mono text-[10px] font-black uppercase tracking-[0.18em] text-[#ff9b8a]">
+            Round {result.round} result
+          </p>
+          <p className="farebi-display mt-1 text-2xl font-black">
+            {result.eliminated.length
+              ? `${result.eliminated.map((player) => player.name).join(' & ')} ${result.eliminated.length === 1 ? 'is' : 'are'} out.`
+              : 'The vote tied. Nobody is out.'}
+          </p>
+        </div>
+        {result.eliminated.length ? (
+          <div className="mt-3 flex flex-wrap gap-2 sm:mt-0 sm:justify-end">
+            {result.eliminated.map((player) => (
+              <Badge
+                key={player.id}
+                className={cn(
+                  player.wasImpostor
+                    ? 'bg-[#ff765f] text-[#10130c]'
+                    : 'bg-white text-[#10130c]',
+                )}
+              >
+                {player.wasImpostor ? 'Impostor' : 'Not an impostor'}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="grid gap-5 px-5 py-5 sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
+            Vote count
+          </p>
+          <div className="mt-3 grid gap-2">
+            {result.voteCounts.map((player) => (
+              <div
+                key={player.playerId}
+                className="flex items-center justify-between gap-4 text-sm"
+              >
+                <span>{player.name}</span>
+                <span className="font-mono text-[#ff9b8a]">{player.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
+            Ballots
+          </p>
+          {result.ballots ? (
+            <div className="mt-3 grid gap-2 text-sm">
+              {result.ballots.map((ballot, index) => (
+                <p key={`${ballot.voterName}-${index}`}>
+                  <span className="text-muted-foreground">
+                    {ballot.voterName}
+                  </span>{' '}
+                  → {ballot.targetName}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+              <EyeOff className="size-4" /> Anonymous for this game
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Voting({ room }: { room: RoomState }) {
   const vote = useMutation(api.rooms.vote)
   const current = room.players.find((player) => player.isCurrent)
@@ -1899,6 +2475,140 @@ function EndedRoom({ room }: { room: RoomState }) {
 }
 
 function Results({ room }: { room: RoomState }) {
+  return room.gameType === 'impostor' ? (
+    <ImpostorResults room={room} />
+  ) : (
+    <ScoredResults room={room} />
+  )
+}
+
+function ImpostorResults({ room }: { room: RoomState }) {
+  const restartRound = useMutation(api.rooms.restartRound)
+  const returnToLobby = useMutation(api.rooms.returnToLobby)
+  const [pending, setPending] = useState<'restart' | 'lobby' | null>(null)
+
+  async function restart() {
+    setPending('restart')
+    try {
+      await restartRound({ roomId: room.id })
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not start a new game.',
+      )
+    } finally {
+      setPending(null)
+    }
+  }
+
+  async function chooseAnotherGame() {
+    setPending('lobby')
+    try {
+      await returnToLobby({ roomId: room.id })
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not return to lobby.',
+      )
+    } finally {
+      setPending(null)
+    }
+  }
+
+  return (
+    <section className="mx-auto max-w-3xl">
+      <div className="text-center">
+        <div className="mx-auto grid size-20 rotate-[-5deg] place-items-center rounded-[1.75rem] bg-[#8eb4ff] text-[#0c1424] shadow-[7px_7px_0_#ff765f]">
+          <Fingerprint className="size-10" />
+        </div>
+        <Badge
+          variant="outline"
+          className="mb-5 mt-9 border-[#8eb4ff]/35 bg-[#8eb4ff]/10 font-mono uppercase tracking-[0.15em] text-[#9dbdff]"
+        >
+          Game complete
+        </Badge>
+        <h1 className="farebi-display text-5xl font-black tracking-[-0.055em] sm:text-7xl">
+          Impostors found.
+        </h1>
+        <p className="mt-3 text-muted-foreground">
+          Every odd word is out. Here’s what everyone was holding.
+        </p>
+      </div>
+
+      {room.impostorLastResult ? (
+        <ImpostorRoundResult result={room.impostorLastResult} />
+      ) : null}
+
+      <div className="mt-7 grid grid-cols-2 overflow-hidden rounded-[1.75rem] border border-[#8eb4ff]/25 bg-[#111b2e]">
+        <div className="border-r border-[#8eb4ff]/20 p-5 sm:p-7">
+          <p className="font-mono text-[10px] font-black uppercase tracking-[0.18em] text-[#9dbdff]">
+            Main word
+          </p>
+          <p className="farebi-display mt-3 break-words text-3xl font-black sm:text-5xl">
+            {room.impostorCommonWord}
+          </p>
+        </div>
+        <div className="bg-[#8eb4ff] p-5 text-[#0c1424] sm:p-7">
+          <p className="font-mono text-[10px] font-black uppercase tracking-[0.18em] opacity-60">
+            Odd word
+          </p>
+          <p className="farebi-display mt-3 break-words text-3xl font-black sm:text-5xl">
+            {room.impostorDifferentWord}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-2 sm:grid-cols-2">
+        {room.players.map((player) => (
+          <div
+            key={player.id}
+            className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-4"
+          >
+            <span
+              className={cn(
+                'grid size-9 place-items-center rounded-xl text-xs font-black',
+                player.impostorRole === 'impostor'
+                  ? 'bg-[#ff765f] text-[#10130c]'
+                  : 'bg-[#8eb4ff]/10 text-[#9dbdff]',
+              )}
+            >
+              {(player.name ?? 'P').slice(0, 1).toUpperCase()}
+            </span>
+            <span className="font-medium">{player.name ?? 'Player'}</span>
+            <Badge variant="outline" className="ml-auto capitalize">
+              {player.impostorRole === 'impostor' ? 'Impostor' : 'Player'}
+            </Badge>
+          </div>
+        ))}
+      </div>
+
+      {room.isHost ? (
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <Button
+            variant="outline"
+            size="lg"
+            disabled={pending !== null}
+            onClick={() => void chooseAnotherGame()}
+          >
+            <ArrowLeft /> {pending === 'lobby' ? 'Returning…' : 'Game shelf'}
+          </Button>
+          <Button
+            size="lg"
+            className="bg-[#8eb4ff] text-[#0c1424] hover:bg-[#a9c5ff]"
+            disabled={pending !== null}
+            onClick={() => void restart()}
+          >
+            <RotateCcw /> {pending === 'restart' ? 'Starting…' : 'Play again'}
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-6 text-center text-sm text-muted-foreground">
+          The host can start another game or return to the shelf.
+        </p>
+      )}
+    </section>
+  )
+}
+
+function ScoredResults({ room }: { room: RoomState }) {
   const restartRound = useMutation(api.rooms.restartRound)
   const returnToLobby = useMutation(api.rooms.returnToLobby)
   const [pending, setPending] = useState<'restart' | 'lobby' | null>(null)

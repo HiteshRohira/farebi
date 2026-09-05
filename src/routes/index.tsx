@@ -284,7 +284,7 @@ function GameShelf({
                   )}
                   onClick={() => onChooseMultiplayer(game.id)}
                 >
-                  <Users /> Play with a room
+                  <Users /> Create room
                 </Button>
               </div>
             </div>

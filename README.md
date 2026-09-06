@@ -1,106 +1,146 @@
 # Farebi
 
-A party-game platform with instant solo play and realtime multiplayer, built with React, TanStack Router,
-Tailwind CSS, shadcn/ui, Convex, and Better Auth. The same room can currently
-play Truth or Lie, Who’s That?, and Impostor. The game is chosen before creating
-a room, and Who’s That? can also start instantly in a room-free landscape solo
-mode.
+Farebi is a realtime party-game platform for quick solo play and 3–20 player
+rooms. Create a room, share its six-character code, and keep the same group
+together across multiple rounds and games.
 
-Who’s That? ships with a conservative catalogue of people broadly recognizable
-in India. Built-in photos are resolved through
-Wikipedia's PageImages API; custom picks can be a name only or include a photo
+Play it at [farebi.vercel.app](https://farebi.vercel.app).
+
+## Games
+
+- **Who’s That?** — Hold the phone overhead while friends give clues for the
+  famous face. It supports multiplayer rounds and an instant, room-free solo
+  mode designed for landscape play.
+- **Truth or Lie** — Players receive a secret truth or lie role, write a
+  statement, discuss the room’s submissions, and vote for the liars. Hosts can
+  configure liar count and phase timers; scores carry across rounds.
+- **Impostor** — Most players receive one word while the impostors receive a
+  related but different word. Discuss, vote, and eliminate suspects until every
+  impostor is found. Hosts can configure impostor count, vote visibility, and
+  how tied votes are resolved.
+
+## Highlights
+
+- Live room and game state powered by Convex subscriptions
+- Name-only guest sign-in, with Google sign-in available when configured
+- Persistent rooms that can switch games between rounds
+- Active-room resume, explicit room switching, host controls, and player removal
+- QR codes and six-character codes for joining on another device
+- Dark-only UI with a web app manifest and mobile fullscreen experience
+- Up to 20 players per multiplayer room
+- Automatic cleanup of rooms after 24 hours of inactivity
+
+Who’s That? includes a deliberately conservative catalogue of people broadly
+recognizable in India. Built-in photos are resolved through Wikipedia’s
+PageImages API; custom multiplayer picks can be name-only or include an image
 uploaded to Convex storage. See the
-[catalogue methodology](docs/celebrity-catalogue.md) for source and selection
+[catalogue methodology](docs/celebrity-catalogue.md) for sourcing and selection
 details.
 
-## Stack boundaries
+## Tech stack
 
-- Convex is the only backend and database.
-- Better Auth runs on Convex with name-only guest sign-in and optional Google
-  sign-in.
-- The UI is permanently dark; there is no theme switcher or light palette.
-- Realtime room state comes from Convex subscriptions (`useQuery`).
+- React 19, TypeScript, and Vite
+- TanStack Router
+- Tailwind CSS and shadcn/ui
+- Convex for the backend, database, storage, and realtime state
+- Better Auth on Convex for guest sessions and optional Google OAuth
+- Vitest and Testing Library
 
-## Local setup
+## Local development
 
-Install dependencies:
+Requirements: Node.js, pnpm, and a Convex account.
+
+Install dependencies and connect a Convex development deployment:
 
 ```sh
 pnpm install
-```
-
-Connect a Convex development deployment:
-
-```sh
 pnpm dev:backend
 ```
 
-The command creates `.env.local` with `CONVEX_DEPLOYMENT`,
-`VITE_CONVEX_URL`, and `VITE_CONVEX_SITE_URL`. Add the frontend origin too:
+The Convex command creates `.env.local` with `CONVEX_DEPLOYMENT`,
+`VITE_CONVEX_URL`, and `VITE_CONVEX_SITE_URL`. Add the local frontend origin:
 
 ```sh
 echo 'VITE_SITE_URL=http://localhost:3000' >> .env.local
 ```
 
-Configure Better Auth on the Convex development deployment:
+Configure the deployment for Better Auth and name-only guest sessions:
 
 ```sh
 pnpm exec convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
 pnpm exec convex env set SITE_URL http://localhost:3000
+```
+
+Google sign-in is optional. To enable it, add the credentials to Convex:
+
+```sh
 pnpm exec convex env set GOOGLE_CLIENT_ID your-google-client-id
 pnpm exec convex env set GOOGLE_CLIENT_SECRET your-google-client-secret
 ```
 
-In Google Cloud, register this exact authorized redirect URI (use the value of
-`VITE_CONVEX_SITE_URL`, not the Vite origin):
+Then register this authorized redirect URI in Google Cloud, using the value of
+`VITE_CONVEX_SITE_URL` rather than the Vite origin:
 
 ```text
 https://your-deployment.convex.site/api/auth/callback/google
 ```
 
-Then run `pnpm dev` and open `http://localhost:3000`.
+Start the frontend and backend together:
 
-## Multi-player local testing
+```sh
+pnpm dev
+```
 
-Allow the extra Vite origins on the development deployment only:
+Open [localhost:3000](http://localhost:3000).
+
+## Testing multiplayer locally
+
+Each local origin gets separate browser storage, making it convenient to act as
+multiple guest players. First allow the origins you need on the development
+deployment:
 
 ```sh
 pnpm exec convex env set TRUSTED_ORIGINS http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004
 ```
 
-Start one shared Convex backend and any number of isolated player origins:
+Then start one shared backend and five player origins:
 
 ```sh
-pnpm dev:players --users=5
+pnpm dev:players --users=5 --open
 ```
 
-Add `--open` to open every origin automatically. Otherwise, open ports `3000`
-through `3004`, then enter a
-different name on each port. Better Auth stores each anonymous session in that
-origin's local storage, so every port becomes a separate player. A Google
-account still represents one player across every origin. Do not set
-development-only trusted origins on a production deployment.
+`--users` accepts 1–20 and defaults to 3. Without `--open`, visit consecutive
+ports beginning at `3000`. Add every non-3000 origin you use to
+`TRUSTED_ORIGINS`; do not add development origins to a production deployment.
 
-`--users` accepts 1–20 and defaults to 3. Add every port after 3000 that you
-plan to use to `TRUSTED_ORIGINS` before starting the test.
+Guest sessions are isolated by origin. A Google account represents the same
+player across origins. The UI normally shortens names to the first name, but
+shows full display names when players in a room share one.
 
-Google player names use their first name, while guest players use the name they
-enter. When two players in a room have the same first name, both are shown by
-their full display name instead.
-
-For production, set `SITE_URL` to the exact public app origin. Name-only guest
-sign-in works in every environment. If Google sign-in is offered, also configure
-the production Google credentials and register the production Convex `.site`
-callback URL with Google.
-
-Vercel uses the rewrite in `vercel.json` to serve the SPA for direct room URLs
-such as `/room/ABC123`, allowing TanStack Router to handle scanned invites.
-
-## Checks
+## Useful commands
 
 ```sh
+pnpm dev             # Convex and Vite development servers
+pnpm dev:web         # Vite only
+pnpm dev:backend     # Convex only
+pnpm dev:players     # Multiple isolated local player origins
 pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
+pnpm check           # Prettier check
 ```
+
+## Deployment
+
+For production, set the Convex `SITE_URL` variable and frontend `VITE_SITE_URL`
+to the exact public app origin. If Google sign-in is enabled, configure the
+production credentials and register the production Convex `.site` callback URL
+with Google.
+
+The included `vercel.json` rewrite serves the single-page app for direct room
+links such as `/room/ABC123`, which TanStack Router then handles client-side.
+
+## License
+
+[MIT](LICENSE)

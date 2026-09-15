@@ -360,7 +360,7 @@ function ConnectedRoom({ code }: { code: string }) {
     room.status !== 'finished'
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#10130c]">
+    <div className="app-shell relative bg-[#10130c]">
       <PartyBackdrop />
       <RoomHeader room={room} onExpire={() => void advance()} />
       <main className="relative mx-auto max-w-5xl px-5 py-10 sm:px-6 sm:py-16">
@@ -397,7 +397,7 @@ function RoomHeader({
   onExpire: () => void
 }) {
   return (
-    <header className="relative z-20 border-b border-white/10 bg-[#10130c]/80 backdrop-blur-xl">
+    <header className="app-top-bar border-b border-white/10 bg-[#10130c]/90">
       <div className="mx-auto grid min-h-16 max-w-5xl grid-cols-[1fr_auto] items-center gap-3 px-6 py-3 sm:grid-cols-[1fr_auto_1fr]">
         <Brand compact />
         {room.status !== 'waiting' ? (

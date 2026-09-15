@@ -28,9 +28,9 @@
   ],
   "start_url": "/",
   "scope": "/",
-  "display": "fullscreen",
-  "display_override": ["fullscreen", "standalone"],
-  "orientation": "landscape",
-  "theme_color": "#16171a",
-  "background_color": "#16171a"
+  "display": "standalone",
+  "display_override": ["standalone"],
+  "orientation": "any",
+  "theme_color": "#10130c",
+  "background_color": "#10130c"
 }

@@ -16,10 +16,10 @@ export function Brand({
       className={cn('group flex items-center gap-2.5', className)}
     >
       <img
-        src="/favicon-48.png"
+        src="/logo192.png"
         alt=""
-        width={48}
-        height={48}
+        width={192}
+        height={192}
         className={cn(
           'shrink-0 transition-transform duration-200 group-hover:-rotate-3 group-hover:scale-105',
           compact ? 'size-7' : 'size-8',

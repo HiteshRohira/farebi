@@ -104,8 +104,6 @@ body {
   padding-top: var(--safe-area-inset-top);
   padding-right: var(--safe-area-inset-right);
   padding-left: var(--safe-area-inset-left);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
 }
 
 .farebi-display {

@@ -86,7 +86,7 @@ function Home() {
   return (
     <div className="app-shell bg-background">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_14%_12%,rgba(214,255,63,0.08),transparent_30%),radial-gradient(circle_at_90%_72%,rgba(255,100,75,0.08),transparent_28%)]" />
-      <header className="app-top-bar border-b border-border/70 bg-background/90">
+      <header className="app-top-bar border-b border-border/70 bg-background">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
           <Brand />
           {auth.isLoading ? (

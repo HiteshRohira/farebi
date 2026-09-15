@@ -397,7 +397,7 @@ function RoomHeader({
   onExpire: () => void
 }) {
   return (
-    <header className="app-top-bar border-b border-white/10 bg-[#10130c]/90">
+    <header className="app-top-bar border-b border-white/10 bg-[#10130c]">
       <div className="mx-auto grid min-h-16 max-w-5xl grid-cols-[1fr_auto] items-center gap-3 px-6 py-3 sm:grid-cols-[1fr_auto_1fr]">
         <Brand compact />
         {room.status !== 'waiting' ? (

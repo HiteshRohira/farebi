@@ -8,7 +8,9 @@ Play it at [farebi.vercel.app](https://farebi.vercel.app).
 
 ## Product trailer
 
-[![Watch the Farebi product trailer](brag-output/brag.jpg)](brag-output/brag.mp4)
+[![Farebi product trailer preview](brag-output/brag.gif)](brag-output/brag.mp4)
+
+[Watch with sound (MP4)](brag-output/brag.mp4)
 
 Music: [“Happy Beats & Business Moves Vol. 10” by Sascha Ende](https://ende.app/en/song/12875-happy-beats-business-moves-vol-10),
 licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
